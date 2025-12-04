@@ -351,6 +351,47 @@ export const dataService = {
     }
   },
 
+  addTraining: async (record: Omit<TrainingRecord, 'id'>): Promise<TrainingRecord> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data, error } = await supabase
+        .from('training_records')
+        .insert({
+          user_id: user.id,
+          course_name: record.courseName,
+          provider: record.provider,
+          date_completed: record.dateCompleted,
+          expiry_date: record.expiryDate,
+          category: record.category,
+          status: record.status,
+          linked_doc_id: record.linkedDocId || null
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding training record:', error);
+        throw error;
+      }
+
+      return {
+        id: data.id,
+        courseName: data.course_name,
+        provider: data.provider,
+        dateCompleted: data.date_completed,
+        expiryDate: data.expiry_date,
+        category: data.category,
+        status: data.status as TrainingStatus,
+        linkedDocId: data.linked_doc_id || undefined
+      };
+    } catch (error: any) {
+      console.error('Error in addTraining:', error);
+      throw new Error(error.message || 'Failed to add training record');
+    }
+  },
+
   getCPD: async (): Promise<CPDEntry[]> => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -544,6 +585,8 @@ export const dataService = {
           currentBand: newPath["current_band"],
           targetBand: newPath["target_band"],
           specialty: newPath.specialty,
+          currentSalary: newPath.current_salary ? Number(newPath.current_salary) : undefined,
+          targetSalary: newPath.target_salary ? Number(newPath.target_salary) : undefined,
           requirements: []
         };
       }
@@ -564,6 +607,8 @@ export const dataService = {
         currentBand: pathData["current_band"],
         targetBand: pathData["target_band"],
         specialty: pathData.specialty,
+        currentSalary: pathData.current_salary ? Number(pathData.current_salary) : undefined,
+        targetSalary: pathData.target_salary ? Number(pathData.target_salary) : undefined,
         requirements: (requirements || []).map((req: any) => ({
           id: req.id,
           title: req.title,
@@ -575,6 +620,38 @@ export const dataService = {
     } catch (error) {
       console.error('Error in getCareerPath:', error);
       return MOCK_PATHWAY;
+    }
+  },
+
+  updateCareerPath: async (updates: {
+    currentBand: string;
+    targetBand: string;
+    specialty: string;
+    currentSalary?: number;
+    targetSalary?: number;
+  }): Promise<void> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('career_paths')
+        .update({
+          "current_band": updates.currentBand,
+          "target_band": updates.targetBand,
+          specialty: updates.specialty,
+          current_salary: updates.currentSalary || null,
+          target_salary: updates.targetSalary || null
+        })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error updating career path:', error);
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Error in updateCareerPath:', error);
+      throw new Error(error.message || 'Failed to update career path');
     }
   },
 

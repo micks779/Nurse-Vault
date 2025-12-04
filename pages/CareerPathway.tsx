@@ -1,19 +1,43 @@
 import React, { useEffect, useState } from 'react';
 import { dataService } from '../services/dataService';
 import { CareerPath, CareerRequirement } from '../types';
-import { Trophy, CheckCircle, Circle, ArrowRight, Loader, Sparkles } from 'lucide-react';
+import { Trophy, CheckCircle, Circle, ArrowRight, Loader, Sparkles, Edit2, X, Save, Plus } from 'lucide-react';
 
 const CareerPathway: React.FC = () => {
   const [path, setPath] = useState<CareerPath | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendation, setRecommendation] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    currentBand: '',
+    targetBand: '',
+    specialty: '',
+    currentSalary: '',
+    targetSalary: ''
+  });
 
   useEffect(() => {
-    dataService.getCareerPath().then(data => {
-      setPath(data);
-      setLoading(false);
-    });
+    loadCareerPath();
   }, []);
+
+  const loadCareerPath = async () => {
+    try {
+      const data = await dataService.getCareerPath();
+      setPath(data);
+      setEditForm({
+        currentBand: data.currentBand,
+        targetBand: data.targetBand,
+        specialty: data.specialty,
+        currentSalary: data.currentSalary?.toString() || '',
+        targetSalary: data.targetSalary?.toString() || ''
+      });
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading career path:', error);
+      setLoading(false);
+    }
+  };
 
   const handleStatusToggle = async (reqId: string, currentStatus: string) => {
     if (!path) return;
@@ -33,9 +57,42 @@ const CareerPathway: React.FC = () => {
   };
 
   const getProgress = () => {
-    if (!path) return 0;
+    if (!path || path.requirements.length === 0) return 0;
     const completed = path.requirements.filter(r => r.status === 'Done').length;
     return Math.round((completed / path.requirements.length) * 100);
+  };
+
+  const getBandNumber = (band: string): string => {
+    const match = band.match(/\d+/);
+    return match ? `B${match[0]}` : band.substring(0, 2).toUpperCase();
+  };
+
+  const calculateSalaryDifference = (): number => {
+    if (!path?.currentSalary || !path?.targetSalary) return 0;
+    return path.targetSalary - path.currentSalary;
+  };
+
+  const handleSavePath = async () => {
+    if (!path) return;
+    
+    setIsSaving(true);
+    try {
+      await dataService.updateCareerPath({
+        currentBand: editForm.currentBand,
+        targetBand: editForm.targetBand,
+        specialty: editForm.specialty,
+        currentSalary: editForm.currentSalary ? parseFloat(editForm.currentSalary) : undefined,
+        targetSalary: editForm.targetSalary ? parseFloat(editForm.targetSalary) : undefined
+      });
+      
+      await loadCareerPath();
+      setShowEditModal(false);
+    } catch (error: any) {
+      console.error('Error saving career path:', error);
+      alert(error.message || 'Failed to save career path');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const generateAIRecommendation = () => {
@@ -51,15 +108,29 @@ const CareerPathway: React.FC = () => {
       {/* Header Path Visualizer */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-primary to-brand-primaryDark p-8 text-white shadow-lg">
         <div className="relative z-10">
-          <h1 className="text-2xl font-bold">Career Progression Pathway</h1>
-          <p className="mt-2 text-brand-mint/80">Tracking your journey from {path.currentBand} to {path.targetBand} in {path.specialty}.</p>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold">Career Progression Pathway</h1>
+              <p className="mt-2 text-brand-mint/80">Tracking your journey from {path.currentBand} to {path.targetBand} in {path.specialty}.</p>
+            </div>
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="ml-4 flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors"
+            >
+              <Edit2 size={16} />
+              Edit Path
+            </button>
+          </div>
           
           <div className="mt-8 flex items-center justify-between gap-4 max-w-lg">
              <div className="flex flex-col items-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-mint/20 border-2 border-brand-mint font-bold text-brand-mint">
-                  B5
+                  {getBandNumber(path.currentBand)}
                 </div>
                 <span className="mt-2 text-sm font-medium">Current</span>
+                {path.currentSalary && (
+                  <span className="mt-1 text-xs text-brand-mint/80">£{path.currentSalary.toLocaleString()}</span>
+                )}
              </div>
              
              <div className="flex-1 flex flex-col items-center">
@@ -71,9 +142,12 @@ const CareerPathway: React.FC = () => {
 
              <div className="flex flex-col items-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-brand-primary font-bold shadow-lg border-2 border-white">
-                  B6
+                  {getBandNumber(path.targetBand)}
                 </div>
                 <span className="mt-2 text-sm font-medium">Target</span>
+                {path.targetSalary && (
+                  <span className="mt-1 text-xs text-brand-mint/80">£{path.targetSalary.toLocaleString()}</span>
+                )}
              </div>
           </div>
         </div>
@@ -160,24 +234,178 @@ const CareerPathway: React.FC = () => {
            </div>
 
            <div className="rounded-xl border border-slate-200 bg-white p-6">
-             <h3 className="font-bold text-brand-charcoal mb-4">Band 6 Salary Impact</h3>
-             <div className="space-y-3">
-               <div className="flex justify-between text-sm">
-                 <span className="text-slate-500">Current (Band 5)</span>
-                 <span className="font-medium text-brand-charcoal">£28,407</span>
+             <h3 className="font-bold text-brand-charcoal mb-4">Salary Impact</h3>
+             {path.currentSalary && path.targetSalary ? (
+               <div className="space-y-3">
+                 <div className="flex justify-between text-sm">
+                   <span className="text-slate-500">Current ({path.currentBand})</span>
+                   <span className="font-medium text-brand-charcoal">£{path.currentSalary.toLocaleString()}</span>
+                 </div>
+                 <div className="flex justify-between text-sm">
+                   <span className="text-slate-500">Target ({path.targetBand})</span>
+                   <span className="font-medium text-brand-primary">£{path.targetSalary.toLocaleString()}</span>
+                 </div>
+                 <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                   <span className="text-xs font-medium text-slate-400">Potential Increase</span>
+                   <span className="text-lg font-bold text-brand-primary">
+                     {calculateSalaryDifference() > 0 ? '+' : ''}£{calculateSalaryDifference().toLocaleString()}
+                   </span>
+                 </div>
                </div>
-               <div className="flex justify-between text-sm">
-                 <span className="text-slate-500">Target (Band 6)</span>
-                 <span className="font-medium text-brand-primary">£35,392</span>
+             ) : (
+               <div className="text-center py-4">
+                 <p className="text-sm text-slate-500 mb-2">Add salary information to see impact</p>
+                 <button
+                   onClick={() => setShowEditModal(true)}
+                   className="text-xs text-brand-primary hover:underline"
+                 >
+                   Edit Path
+                 </button>
                </div>
-               <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-                 <span className="text-xs font-medium text-slate-400">Potential Increase</span>
-                 <span className="text-lg font-bold text-brand-primary">+£6,985</span>
-               </div>
-             </div>
+             )}
            </div>
         </div>
       </div>
+
+      {/* Edit Career Path Modal */}
+      {showEditModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !isSaving && setShowEditModal(false)}
+        >
+          <div 
+            className="w-full max-w-md rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 p-6">
+              <h2 className="text-xl font-bold text-brand-charcoal">Edit Career Path</h2>
+              <button
+                onClick={() => !isSaving && setShowEditModal(false)}
+                className="text-slate-400 hover:text-slate-600"
+                disabled={isSaving}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-brand-charcoal mb-1">
+                  Current Band <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editForm.currentBand}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, currentBand: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  disabled={isSaving}
+                >
+                  <option value="Band 2">Band 2</option>
+                  <option value="Band 3">Band 3</option>
+                  <option value="Band 4">Band 4</option>
+                  <option value="Band 5">Band 5</option>
+                  <option value="Band 6">Band 6</option>
+                  <option value="Band 7">Band 7</option>
+                  <option value="Band 8">Band 8</option>
+                  <option value="Band 9">Band 9</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-brand-charcoal mb-1">
+                  Target Band <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editForm.targetBand}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, targetBand: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  disabled={isSaving}
+                >
+                  <option value="Band 2">Band 2</option>
+                  <option value="Band 3">Band 3</option>
+                  <option value="Band 4">Band 4</option>
+                  <option value="Band 5">Band 5</option>
+                  <option value="Band 6">Band 6</option>
+                  <option value="Band 7">Band 7</option>
+                  <option value="Band 8">Band 8</option>
+                  <option value="Band 9">Band 9</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-brand-charcoal mb-1">
+                  Specialty <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.specialty}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, specialty: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  placeholder="e.g., General, Mental Health, Paediatrics"
+                  disabled={isSaving}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-brand-charcoal mb-1">
+                    Current Salary (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    value={editForm.currentSalary}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, currentSalary: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                    placeholder="£28,407"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-brand-charcoal mb-1">
+                    Target Salary (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    value={editForm.targetSalary}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, targetSalary: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                    placeholder="£35,392"
+                    disabled={isSaving}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-200 p-6">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePath}
+                disabled={isSaving || !editForm.currentBand || !editForm.targetBand || !editForm.specialty}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader className="animate-spin" size={16} />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -188,6 +188,8 @@ CREATE TABLE IF NOT EXISTS career_paths (
   "current_band" TEXT NOT NULL,
   "target_band" TEXT NOT NULL,
   specialty TEXT NOT NULL,
+  current_salary NUMERIC(10,2),
+  target_salary NUMERIC(10,2),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id)

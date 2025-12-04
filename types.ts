@@ -77,6 +77,8 @@ export interface CareerPath {
   currentBand: string;
   targetBand: string;
   specialty: string;
+  currentSalary?: number;
+  targetSalary?: number;
   requirements: CareerRequirement[];
 }
 
