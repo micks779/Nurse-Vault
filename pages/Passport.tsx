@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Search, Filter, MoreVertical, Plus, X, Loader2 } from 'lucide-react';
+import { Upload, FileText, Search, Filter, MoreVertical, Plus, X, Loader2, Eye } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { Document, DocCategory } from '../types';
 
@@ -15,6 +15,9 @@ const Passport: React.FC = () => {
     category: DocCategory.OTHER,
     expiryDate: ''
   });
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -102,6 +105,32 @@ const Passport: React.FC = () => {
     return matchesCategory && matchesSearch;
   });
 
+  const handleDocumentClick = async (doc: Document) => {
+    setIsLoadingPreview(true);
+    setPreviewDoc(doc);
+    
+    try {
+      const url = await dataService.getDocumentUrl(doc.id);
+      if (url) {
+        setPreviewUrl(url);
+      } else {
+        alert('Failed to load document. Please try again.');
+        setPreviewDoc(null);
+      }
+    } catch (error: any) {
+      console.error('Error loading document:', error);
+      alert(error.message || 'Failed to load document');
+      setPreviewDoc(null);
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewDoc(null);
+    setPreviewUrl(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -167,7 +196,11 @@ const Passport: React.FC = () => {
       {/* Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filteredDocs.map((doc) => (
-          <div key={doc.id} className="group relative flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+          <div 
+            key={doc.id} 
+            onClick={() => handleDocumentClick(doc)}
+            className="group relative flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md cursor-pointer hover:border-brand-primary"
+          >
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50 text-slate-600 group-hover:bg-brand-primary group-hover:text-white transition-colors">
               <FileText size={20} />
             </div>
@@ -185,9 +218,25 @@ const Passport: React.FC = () => {
                </div>
             )}
 
-            <button className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
-              <MoreVertical size={16} />
-            </button>
+            <div className="absolute top-4 right-4 flex gap-2">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDocumentClick(doc);
+                }}
+                className="text-slate-400 hover:text-brand-primary transition-colors"
+                title="Preview document"
+              >
+                <Eye size={16} />
+              </button>
+              <button 
+                onClick={(e) => e.stopPropagation()}
+                className="text-slate-400 hover:text-slate-600"
+                title="More options"
+              >
+                <MoreVertical size={16} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -313,6 +362,84 @@ const Passport: React.FC = () => {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Preview Modal */}
+      {previewDoc && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={closePreview}
+        >
+          <div 
+            className="relative w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 p-4 bg-slate-50">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-bold text-brand-charcoal truncate">{previewDoc.title}</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  {previewDoc.category} • {previewDoc.fileType.toUpperCase()} • {previewDoc.size}
+                </p>
+              </div>
+              <button
+                onClick={closePreview}
+                className="ml-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Preview Content */}
+            <div className="relative w-full h-[calc(90vh-80px)] bg-slate-100 flex items-center justify-center">
+              {isLoadingPreview ? (
+                <div className="text-center">
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand-primary" />
+                  <p className="mt-2 text-sm text-slate-500">Loading document...</p>
+                </div>
+              ) : previewUrl ? (
+                <>
+                  {previewDoc.fileType === 'pdf' ? (
+                    <iframe
+                      src={previewUrl}
+                      className="w-full h-full border-0"
+                      title={previewDoc.title}
+                    />
+                  ) : (
+                    <img
+                      src={previewUrl}
+                      alt={previewDoc.title}
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="text-center text-slate-500">
+                  <FileText className="mx-auto h-12 w-12 mb-2 opacity-50" />
+                  <p>Failed to load document</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 p-4 bg-slate-50 flex items-center justify-between">
+              <div className="text-xs text-slate-500">
+                Uploaded: {previewDoc.uploadDate}
+                {previewDoc.expiryDate && ` • Expires: ${previewDoc.expiryDate}`}
+              </div>
+              <a
+                href={previewUrl || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-brand-primary hover:underline flex items-center gap-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Open in new tab
+                <FileText size={14} />
+              </a>
             </div>
           </div>
         </div>
