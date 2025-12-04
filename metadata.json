@@ -1,0 +1,7 @@
+{
+  "name": "NurseVault",
+  "description": "A secure digital passport, training tracker, and career progression engine for nurses. Manage your NMC revalidation, track mandatory training, and plan your journey from Band 5 to Band 8.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
