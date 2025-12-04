@@ -120,7 +120,8 @@ const Training: React.FC = () => {
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* Desktop Table View */}
+      <div className="hidden md:block overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
@@ -155,6 +156,43 @@ const Training: React.FC = () => {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-4">
+        {records.map((record) => (
+          <div key={record.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-brand-charcoal truncate">{record.courseName}</h3>
+                <p className="text-xs text-slate-500 mt-1">{record.category}</p>
+              </div>
+              <span className={`ml-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium flex-shrink-0 ${getStatusColor(record.status)}`}>
+                {getStatusIcon(record.status)}
+                {record.status}
+              </span>
+            </div>
+            
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Provider:</span>
+                <span className="text-brand-charcoal font-medium">{record.provider}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Date Completed:</span>
+                <span className="text-brand-charcoal font-medium">{record.dateCompleted}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Expires:</span>
+                <span className="text-brand-charcoal font-medium">{record.expiryDate}</span>
+              </div>
+            </div>
+            
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <a href="#" className="text-sm text-brand-primary hover:text-brand-primaryDark">Update</a>
+            </div>
+          </div>
+        ))}
       </div>
 
       {records.length === 0 && (

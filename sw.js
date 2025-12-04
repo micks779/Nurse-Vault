@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nursevault-v1';
+const CACHE_NAME = 'nursevault-v2';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -9,10 +9,22 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(urlsToCache))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  // Skip API calls and external resources
+  if (event.request.url.includes('/api/') || 
+      event.request.url.startsWith('http') && !event.request.url.includes(self.location.origin)) {
+    return fetch(event.request);
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
@@ -20,7 +32,38 @@ self.addEventListener('fetch', (event) => {
         if (response) {
           return response;
         }
-        return fetch(event.request);
+        
+        // For navigation requests (SPA routing), always return index.html
+        const acceptHeader = event.request.headers.get('accept');
+        if (event.request.mode === 'navigate' || 
+            (event.request.method === 'GET' && acceptHeader && acceptHeader.includes('text/html'))) {
+          return caches.match('/index.html');
+        }
+        
+        // For other requests, fetch from network
+        return fetch(event.request)
+          .then((response) => {
+            // Don't cache if not a valid response
+            if (!response || response.status !== 200 || response.type !== 'basic') {
+              return response;
+            }
+            
+            // Clone the response
+            const responseToCache = response.clone();
+            
+            caches.open(CACHE_NAME)
+              .then((cache) => {
+                cache.put(event.request, responseToCache);
+              });
+            
+            return response;
+          })
+          .catch(() => {
+            // If fetch fails and it's a navigation request, return index.html
+            if (event.request.mode === 'navigate') {
+              return caches.match('/index.html');
+            }
+          });
       })
   );
 });
@@ -37,5 +80,6 @@ self.addEventListener('activate', (event) => {
         })
       );
     })
+    .then(() => self.clients.claim())
   );
 });
