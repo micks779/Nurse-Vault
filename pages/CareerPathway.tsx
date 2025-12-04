@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { dataService } from '../services/dataService';
 import { CareerPath, CareerRequirement } from '../types';
-import { Trophy, CheckCircle, Circle, ArrowRight, Loader, Sparkles, Edit2, X, Save, Plus } from 'lucide-react';
+import { Trophy, CheckCircle, Circle, ArrowRight, Loader, Sparkles, Edit2, X, Save, Plus, ExternalLink, BookOpen } from 'lucide-react';
 
 const CareerPathway: React.FC = () => {
   const [path, setPath] = useState<CareerPath | null>(null);
@@ -23,18 +23,29 @@ const CareerPathway: React.FC = () => {
 
   const loadCareerPath = async () => {
     try {
+      setLoading(true);
       const data = await dataService.getCareerPath();
-      setPath(data);
-      setEditForm({
-        currentBand: data.currentBand,
-        targetBand: data.targetBand,
-        specialty: data.specialty,
-        currentSalary: data.currentSalary?.toString() || '',
-        targetSalary: data.targetSalary?.toString() || ''
-      });
-      setLoading(false);
+      if (data) {
+        setPath(data);
+        setEditForm({
+          currentBand: data.currentBand || '',
+          targetBand: data.targetBand || '',
+          specialty: data.specialty || '',
+          currentSalary: data.currentSalary?.toString() || '',
+          targetSalary: data.targetSalary?.toString() || ''
+        });
+      }
     } catch (error) {
       console.error('Error loading career path:', error);
+      // Set a default path to prevent crash
+      setPath({
+        id: 'default',
+        currentBand: 'Band 5',
+        targetBand: 'Band 6',
+        specialty: 'General',
+        requirements: []
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -101,7 +112,7 @@ const CareerPathway: React.FC = () => {
   };
 
   if (loading) return <div className="p-10 flex justify-center text-brand-primary"><Loader className="animate-spin" /></div>;
-  if (!path) return <div>No pathway selected.</div>;
+  if (!path) return <div className="p-10 text-center text-slate-500">No pathway data available. Please try refreshing the page.</div>;
 
   return (
     <div className="space-y-8">
@@ -156,13 +167,41 @@ const CareerPathway: React.FC = () => {
         <Trophy className="absolute right-4 bottom-4 h-48 w-48 text-white/5 rotate-12" />
       </div>
 
+      {/* Career Pathway Resources Section */}
+      <div className="rounded-xl border border-brand-primary/20 bg-gradient-to-r from-brand-primary/5 to-brand-mint/10 p-6 mb-8">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0">
+            <BookOpen className="text-brand-primary" size={24} />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-brand-charcoal mb-2">Career Pathway Resources</h3>
+            <p className="text-sm text-slate-700 mb-3">
+              Explore comprehensive career pathways in health and social care through the North Central London Training Hub Career Pathway Tool. This resource provides detailed information on over 350 career opportunities, role descriptions, progression pathways, entry requirements, and apprenticeship opportunities.
+            </p>
+            <a
+              href="https://www.ncltraininghub.org/career-pathway-tool"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors shadow-sm"
+            >
+              <span>Visit NCL Career Pathway Tool</span>
+              <ExternalLink size={16} />
+            </a>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Requirements List */}
         <div className="lg:col-span-2 space-y-6">
-          <h2 className="text-lg font-bold text-brand-charcoal">Core Requirements</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-brand-charcoal">Core Requirements</h2>
+            <p className="text-xs text-slate-500">Not sure what's required? Check the <a href="https://www.ncltraininghub.org/career-pathway-tool" target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">NCL Career Pathway Tool</a></p>
+          </div>
           
           <div className="space-y-4">
-            {path.requirements.map((req) => (
+            {path.requirements && path.requirements.length > 0 ? (
+              path.requirements.map((req) => (
               <div 
                 key={req.id} 
                 className={`relative flex items-start gap-4 rounded-xl border p-5 transition-all
@@ -199,7 +238,13 @@ const CareerPathway: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ))}
+            ))
+            ) : (
+              <div className="text-center py-8 text-slate-500">
+                <p className="mb-2">No requirements set yet.</p>
+                <p className="text-sm">Requirements will appear here once your career path is configured.</p>
+              </div>
+            )}
           </div>
         </div>
 

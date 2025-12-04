@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nursevault-v2';
+const CACHE_NAME = 'nursevault-v3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -19,9 +19,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip API calls and external resources
+  // Skip API calls, external resources, and browser extension URLs
   if (event.request.url.includes('/api/') || 
-      event.request.url.startsWith('http') && !event.request.url.includes(self.location.origin)) {
+      event.request.url.startsWith('chrome-extension://') ||
+      event.request.url.startsWith('moz-extension://') ||
+      event.request.url.startsWith('safari-extension://') ||
+      (event.request.url.startsWith('http') && !event.request.url.includes(self.location.origin))) {
     return fetch(event.request);
   }
 
@@ -43,8 +46,13 @@ self.addEventListener('fetch', (event) => {
         // For other requests, fetch from network
         return fetch(event.request)
           .then((response) => {
-            // Don't cache if not a valid response
-            if (!response || response.status !== 200 || response.type !== 'basic') {
+            // Don't cache if not a valid response or if it's an extension URL
+            if (!response || 
+                response.status !== 200 || 
+                response.type !== 'basic' ||
+                event.request.url.startsWith('chrome-extension://') ||
+                event.request.url.startsWith('moz-extension://') ||
+                event.request.url.startsWith('safari-extension://')) {
               return response;
             }
             
@@ -54,6 +62,10 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME)
               .then((cache) => {
                 cache.put(event.request, responseToCache);
+              })
+              .catch((err) => {
+                // Silently fail if caching fails (e.g., for extension URLs)
+                console.warn('Cache put failed:', err);
               });
             
             return response;

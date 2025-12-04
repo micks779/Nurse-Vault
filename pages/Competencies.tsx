@@ -114,7 +114,20 @@ const Competencies: React.FC = () => {
       <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-brand-charcoal">Competencies</h1>
-          <p className="text-slate-500">Track hands-on clinical and professional skills for your progression.</p>
+          <p className="text-slate-500">Document and track your clinical competencies and professional skills. Record when you've been assessed on procedures like venepuncture, cannulation, or leadership skills. This evidence supports your career progression, appraisals, and demonstrates your readiness for promotion.</p>
+          <div className="mt-3 rounded-lg border border-brand-primary/20 bg-brand-primary/5 p-4 text-sm text-slate-700">
+            <p className="font-semibold text-brand-charcoal mb-2">📋 What are Competencies?</p>
+            <p className="mb-2">Clinical competencies are hands-on skills you've been assessed on (e.g., Venepuncture, Cannulation, Catheterisation, Wound Care). Professional competencies include Leadership, Communication, and Mentoring skills.</p>
+            <p className="font-semibold text-brand-charcoal mb-2 mt-3">🎯 Why Track Them?</p>
+            <ul className="list-disc list-inside space-y-1 ml-1">
+              <li>Required for career progression (e.g., Band 5 → Band 6)</li>
+              <li>Evidence for appraisals and performance reviews</li>
+              <li>Demonstrates readiness for promotion</li>
+              <li>Links to your Career Pathway requirements</li>
+              <li>Can be used in job applications and interviews</li>
+            </ul>
+            <p className="mt-3 text-xs text-slate-600 italic">💡 Tip: See your Career Pathway to view which competencies are required for your target band.</p>
+          </div>
         </div>
         <button 
           onClick={() => startAddProcess()}

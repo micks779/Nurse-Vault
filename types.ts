@@ -33,7 +33,7 @@ export interface TrainingRecord {
   courseName: string;
   provider: string;
   dateCompleted: string;
-  expiryDate: string;
+  expiryDate?: string; // Made optional
   category: string;
   status: TrainingStatus;
   linkedDocId?: string;

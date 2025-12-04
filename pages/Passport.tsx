@@ -136,7 +136,7 @@ const Passport: React.FC = () => {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-brand-charcoal">My Passport</h1>
-          <p className="text-slate-500">Securely store and manage your professional documents.</p>
+          <p className="text-slate-500">Securely store your personal identification and professional credentials. Upload documents like your passport, right to work documents, NMC PIN, DBS certificate, and other personal identification documents.</p>
         </div>
         <div className="relative">
            <input 
@@ -186,9 +186,11 @@ const Passport: React.FC = () => {
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="All">All Categories</option>
-            {Object.values(DocCategory).map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
+            {Object.values(DocCategory)
+              .filter(cat => cat !== DocCategory.MANDATORY_TRAINING)
+              .map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
           </select>
         </div>
       </div>
@@ -295,7 +297,7 @@ const Passport: React.FC = () => {
                   value={uploadForm.title}
                   onChange={(e) => setUploadForm(prev => ({ ...prev, title: e.target.value }))}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                  placeholder="e.g., Passport, DBS Certificate"
+                  placeholder="e.g., Passport, Right to Work, NMC PIN"
                   disabled={isUploading}
                 />
               </div>
@@ -310,10 +312,15 @@ const Passport: React.FC = () => {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
                   disabled={isUploading}
                 >
-                  {Object.values(DocCategory).map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  {Object.values(DocCategory)
+                    .filter(cat => cat !== DocCategory.MANDATORY_TRAINING)
+                    .map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
                 </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  For training certificates and course completion records, use the "Training & Expiry" section.
+                </p>
               </div>
 
               <div>

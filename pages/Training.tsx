@@ -45,7 +45,7 @@ const Training: React.FC = () => {
   };
 
   const calculateStatus = (expiryDate: string): TrainingStatus => {
-    if (!expiryDate) return TrainingStatus.VALID;
+    if (!expiryDate) return TrainingStatus.VALID; // If no expiry date, show as Valid
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -65,7 +65,7 @@ const Training: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.courseName || !formData.provider || !formData.dateCompleted || !formData.expiryDate) {
+    if (!formData.courseName || !formData.provider || !formData.dateCompleted) {
       alert('Please fill in all required fields');
       return;
     }
@@ -110,6 +110,14 @@ const Training: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-brand-charcoal">Mandatory Training</h1>
           <p className="text-slate-500">Track expiry dates and compliance status.</p>
+          <div className="mt-2 rounded-lg border border-brand-mint/30 bg-brand-mint/5 p-3 text-xs text-slate-600">
+            <p className="font-medium mb-1">💡 Training Expiry Guidelines:</p>
+            <ul className="list-disc list-inside space-y-0.5 ml-1">
+              <li>Some courses expire after 1-3 years (check your certificate)</li>
+              <li>It's recommended to renew training 3 months before expiry</li>
+              <li>If you're unsure of the expiry date, leave it blank and update later</li>
+            </ul>
+          </div>
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
@@ -142,7 +150,7 @@ const Training: React.FC = () => {
                 </td>
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{record.provider}</td>
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{record.dateCompleted}</td>
-                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{record.expiryDate}</td>
+                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{record.expiryDate || 'Not set'}</td>
                 <td className="whitespace-nowrap px-6 py-4">
                   <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${getStatusColor(record.status)}`}>
                     {getStatusIcon(record.status)}
@@ -184,7 +192,7 @@ const Training: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Expires:</span>
-                <span className="text-brand-charcoal font-medium">{record.expiryDate}</span>
+                <span className="text-brand-charcoal font-medium">{record.expiryDate || 'Not set'}</span>
               </div>
             </div>
             
@@ -294,17 +302,19 @@ const Training: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-brand-charcoal mb-1">
-                    Expiry Date <span className="text-red-500">*</span>
+                    Expiry Date (Optional)
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.expiryDate}
                     onChange={(e) => setFormData(prev => ({ ...prev, expiryDate: e.target.value }))}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
                     min={formData.dateCompleted || new Date().toISOString().split('T')[0]}
                     disabled={isSubmitting}
                   />
+                  <p className="mt-1 text-xs text-slate-500">
+                    If unknown, leave blank. You can update this later. Recommended to renew 3 months before expiry.
+                  </p>
                 </div>
               </div>
 
