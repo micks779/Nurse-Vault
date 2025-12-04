@@ -8,9 +8,13 @@ import CareerPathway from './pages/CareerPathway';
 import Learning from './pages/Learning';
 import Competencies from './pages/Competencies';
 import Login from './pages/Login';
+import Security from './pages/Security';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfService from './pages/TermsOfService';
 import { Menu } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import Footer from './components/Footer';
 
 // Layout component for the protected area (Sidebar + Content)
 const MainLayout: React.FC = () => {
@@ -54,6 +58,9 @@ const MainLayout: React.FC = () => {
         <div className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-20">
           <Outlet />
         </div>
+        
+        {/* Footer */}
+        <Footer />
       </main>
     </div>
   );
@@ -64,8 +71,11 @@ const App: React.FC = () => {
     <AuthProvider>
       <HashRouter>
         <Routes>
-          {/* Public Route */}
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/security" element={<Security />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
 
           {/* Protected Routes */}
           <Route element={

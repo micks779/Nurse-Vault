@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ShieldCheck, Loader2, Lock } from 'lucide-react';
+import { ShieldCheck, Loader2, Lock, Shield } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -140,8 +140,20 @@ const Login: React.FC = () => {
             </form>
           </div>
           
-          <div className="bg-slate-50 px-8 py-4 text-center text-xs text-slate-500 border-t border-slate-100">
-            Protected by robust encryption.
+          <div className="bg-slate-50 px-8 py-4 border-t border-slate-100">
+            <div className="flex flex-col items-center gap-2 text-xs text-slate-500">
+              <div className="flex items-center gap-1">
+                <Shield size={14} className="text-brand-primary" />
+                <span>Protected by robust encryption</span>
+              </div>
+              <div className="flex items-center gap-3 text-slate-400">
+                <a href="#/privacy" className="hover:text-brand-primary hover:underline">Privacy Policy</a>
+                <span>•</span>
+                <a href="#/terms" className="hover:text-brand-primary hover:underline">Terms of Service</a>
+                <span>•</span>
+                <a href="#/security" className="hover:text-brand-primary hover:underline">Security</a>
+              </div>
+            </div>
           </div>
         </div>
       </div>
