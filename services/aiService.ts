@@ -1,11 +1,44 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { VoiceLog, Reflection, Recommendation } from "../types";
+import { VoiceLog, Reflection, Recommendation, CareerPath, Competency, CareerRequirement } from "../types";
+import { supabase } from "../lib/supabase";
 
-// Initialize Gemini
-// Note: In production, this should use Supabase Edge Function to keep API key secure
-// For now, we use it directly in development (not recommended for production)
-const apiKey = import.meta.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+// Helper function to call the secure Edge Function
+async function callEdgeFunction(type: 'transcribe' | 'chat' | 'analyze_jd' | 'recommendations', data: any): Promise<any> {
+  try {
+    // Get the current session for authentication
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      throw new Error('Not authenticated. Please log in.');
+    }
+
+    // Get Supabase URL from environment
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) {
+      throw new Error('Supabase URL not configured');
+    }
+
+    // Call the Edge Function
+    const response = await fetch(`${supabaseUrl}/functions/v1/gemini-proxy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+      },
+      body: JSON.stringify({ type, data }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errorData.error || `Edge Function error: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Edge Function call failed (${type}):`, error);
+    throw error;
+  }
+}
 
 export const aiService = {
   /**
@@ -14,53 +47,24 @@ export const aiService = {
    * @param mimeType Audio mime type (e.g. 'audio/webm')
    */
   processVoiceNote: async (base64Audio: string, mimeType: string): Promise<{ transcription: string, suggestion: 'CPD' | 'Reflection' | 'Competency' }> => {
-    if (!apiKey || !ai) {
-      // Mock fallback if no key provided
-      console.warn('⚠️ GEMINI_API_KEY not set - using mock transcription');
+    try {
+      const result = await callEdgeFunction('transcribe', {
+        base64Audio,
+        mimeType,
+      });
+
+      return {
+        transcription: result.transcription || "Transcription failed.",
+        suggestion: result.suggestion || "CPD"
+      };
+    } catch (error: any) {
+      console.error("Voice note processing error:", error);
+      // Fallback mock response if Edge Function fails
+      console.warn('⚠️ Using mock transcription due to Edge Function error');
       return new Promise(resolve => setTimeout(() => resolve({
         transcription: "I attended a seminar on infection control today. We learned about the new protocols for PPE and hand hygiene compliance in high-risk wards.",
         suggestion: 'CPD'
       }), 1500));
-    }
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: {
-            parts: [
-                {
-                    inlineData: {
-                        mimeType: mimeType,
-                        data: base64Audio
-                    }
-                },
-                {
-                    text: "Transcribe this audio verbatim."
-                }
-            ]
-        },
-        config: {
-            systemInstruction: "You are a transcription assistant. Transcribe the user's audio. Then, analyze the content and categorize it into one of these types: 'CPD', 'Reflection', 'Competency'. Return the result as a JSON object with 'transcription' and 'suggestion' fields.",
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    transcription: { type: Type.STRING },
-                    suggestion: { type: Type.STRING, enum: ['CPD', 'Reflection', 'Competency'] }
-                }
-            }
-        }
-      });
-
-      const result = JSON.parse(response.text || '{}');
-      return {
-          transcription: result.transcription || "Transcription failed.",
-          suggestion: result.suggestion || "CPD"
-      };
-
-    } catch (error) {
-      console.error("Gemini Transcription Error:", error);
-      throw new Error("Failed to process voice note.");
     }
   },
 
@@ -68,29 +72,32 @@ export const aiService = {
    * Generates reflection prompts based on a topic or transcription.
    */
   getReflectionPrompts: async (context: string): Promise<string[]> => {
-    if (!apiKey || !ai) {
-      console.warn('⚠️ GEMINI_API_KEY not set - using mock prompts');
-      return ["What did you learn?", "How will this change your practice?", "How does this relate to the Code?"];
-    }
-
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `User Context/Situation: "${context}"`,
-            config: {
-                systemInstruction: "You are a clinical nurse educator. Based on the user's context, generate 3 specific, probing reflection questions to help the nurse write a formal NMC revalidation reflection. Return only the questions as a JSON array of strings.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                }
-            }
-        });
-        
-        return JSON.parse(response.text || '[]');
-    } catch (e) {
-        console.error(e);
-        return ["What happened?", "What did you learn?", "What will you do differently?"];
+      // For now, use a simple prompt generation via Edge Function
+      // This could be enhanced to use Edge Function if needed
+      // For simplicity, we'll use a basic approach
+      const result = await callEdgeFunction('chat', {
+        userMessage: `Generate 3 specific reflection questions based on this context: ${context}`,
+        currentPath: null,
+        competencies: [],
+      });
+
+      // Try to extract questions from the response
+      const text = result.result || result;
+      if (typeof text === 'string') {
+        // Simple extraction - could be improved
+        const questions = text.match(/\d+\.\s*([^?\n]+[?])/g) || 
+                         text.split('\n').filter((line: string) => line.includes('?'));
+        if (questions.length > 0) {
+          return questions.map((q: string) => q.replace(/^\d+\.\s*/, '').trim());
+        }
+      }
+
+      // Fallback
+      return ["What did you learn?", "How will this change your practice?", "How does this relate to the Code?"];
+    } catch (error) {
+      console.error('Error generating reflection prompts:', error);
+      return ["What happened?", "What did you learn?", "What will you do differently?"];
     }
   },
 
@@ -98,71 +105,131 @@ export const aiService = {
    * Compiles answers into a structured reflection.
    */
   generateStructuredReflection: async (context: string, questions: string[], answers: string[]): Promise<string> => {
-     if (!apiKey || !ai) {
-       console.warn('⚠️ GEMINI_API_KEY not set - using mock reflection');
-       return "Structured reflection mock content...\n\n**What?**\nI experienced...\n\n**So What?**\nThis matters because...\n\n**Now What?**\nI will...";
-     }
+    try {
+      const qaPairs = questions.map((q, i) => `Q: ${q}\nA: ${answers[i]}`).join('\n');
+      const prompt = `Context: ${context}\n\nUser Answers:\n${qaPairs}\n\nWrite a formal, structured reflection (approx 200 words) suitable for a Nursing & Midwifery Council (NMC) portfolio based on the user's answers. Use the 'What? So What? Now What?' model. Format with Markdown headers.`;
 
-     const qaPairs = questions.map((q, i) => `Q: ${q}\nA: ${answers[i]}`).join('\n');
-     
-     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Context: ${context}\n\nUser Answers:\n${qaPairs}`,
-            config: {
-                systemInstruction: "You are a clinical nurse educator. Write a formal, structured reflection (approx 200 words) suitable for a Nursing & Midwifery Council (NMC) portfolio based on the user's answers. Use the 'What? So What? Now What?' model. Format with Markdown headers.",
-            }
-        });
+      const result = await callEdgeFunction('chat', {
+        userMessage: prompt,
+        currentPath: null,
+        competencies: [],
+      });
 
-        return response.text || "Could not generate reflection.";
-     } catch (e) {
-        console.error(e);
-        return "Error generating reflection. Please try again.";
-     }
+      return result.result || "Could not generate reflection.";
+    } catch (error: any) {
+      console.error('Error generating structured reflection:', error);
+      return "Error generating reflection. Please try again.";
+    }
   },
 
   /**
    * Generates CPD recommendations based on profile.
    */
   getRecommendations: async (currentBand: string, targetBand: string, specialty: string): Promise<Recommendation[]> => {
-    if (!apiKey || !ai) {
-      console.warn('⚠️ GEMINI_API_KEY not set - using mock recommendations');
-      return [
-        { id: 'ai-rec-1', title: 'Advanced Leadership in Nursing', type: 'Course', reason: 'Generated for Band 6 progression.', status: 'Pending' }
-      ];
-    }
-
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `User Profile: Current ${currentBand}, Target ${targetBand}, Specialty ${specialty}.`,
-            config: {
-                systemInstruction: "Suggest 3 specific CPD activities or courses that would bridge the gap for this nurse's career progression. Return a JSON array of objects with fields: title, type (Course/Module/Activity), reason, provider, estimatedHours (number).",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            title: { type: Type.STRING },
-                            type: { type: Type.STRING, enum: ['Course', 'Module', 'Activity'] },
-                            reason: { type: Type.STRING },
-                            provider: { type: Type.STRING },
-                            estimatedHours: { type: Type.NUMBER }
-                        }
-                    }
-                }
-            }
-        });
-        const rawRecs = JSON.parse(response.text || '[]');
-        return rawRecs.map((r: any, i: number) => ({
-            ...r,
-            id: `gen-${Date.now()}-${i}`,
-            status: 'Pending'
+      const result = await callEdgeFunction('recommendations', {
+        currentBand,
+        targetBand,
+        specialty,
+      });
+
+      const rawRecs = result.recommendations || [];
+      return rawRecs.map((r: any, i: number) => ({
+        ...r,
+        id: `gen-${Date.now()}-${i}`,
+        status: 'Pending' as const,
+        type: r.type || 'Course',
+        reason: r.description || r.reason || '',
+      }));
+    } catch (error) {
+      console.error('Error getting recommendations:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Chat-based career guidance - conversational AI assistant
+   */
+  chatCareerGuidance: async (
+    userMessage: string,
+    currentPath: CareerPath | null,
+    competencies: Competency[]
+  ): Promise<string> => {
+    try {
+      const result = await callEdgeFunction('chat', {
+        userMessage,
+        currentPath,
+        competencies,
+      });
+
+      return result.result || "I couldn't generate a response. Please try again.";
+    } catch (error: any) {
+      console.error('Error in career guidance chat:', error);
+      return `I encountered an error: ${error.message || 'Unknown error'}. Please ensure the Edge Function is deployed and configured correctly.`;
+    }
+  },
+
+  /**
+   * Analyze job description and create career path requirements
+   */
+  analyzeJobDescriptionAndCreatePath: async (
+    context: string,
+    currentPath: CareerPath
+  ): Promise<{ analysis: string; requirements: CareerRequirement[] }> => {
+    try {
+      // Get competencies for context
+      const { data: competencies } = await supabase
+        .from('competencies')
+        .select('*')
+        .eq('user_id', (await supabase.auth.getUser()).data.user?.id || '');
+
+      const result = await callEdgeFunction('analyze_jd', {
+        jobDescription: context,
+        currentBand: currentPath.currentBand,
+        targetBand: currentPath.targetBand,
+        specialty: currentPath.specialty || '',
+        competencies: competencies || [],
+      });
+
+      // Parse the result
+      let analysis = '';
+      let requirements: CareerRequirement[] = [];
+
+      if (typeof result === 'string') {
+        // Try to parse if it's a JSON string
+        try {
+          const parsed = JSON.parse(result);
+          analysis = parsed.analysis || result;
+          requirements = (parsed.requirements || []).map((req: any, idx: number) => ({
+            id: `jd-req-${Date.now()}-${idx}`,
+            title: req.title || 'Requirement',
+            type: (req.type || 'CPD') as CareerRequirement['type'],
+            status: 'Not Started' as CareerRequirement['status'],
+            description: req.description || '',
+            priority: req.priority || 'Medium' as CareerRequirement['priority'],
+          }));
+        } catch {
+          analysis = result;
+        }
+      } else {
+        analysis = result.analysis || "I've analyzed the job description and created a pathway for you.";
+        requirements = (result.requirements || []).map((req: any, idx: number) => ({
+          id: `jd-req-${Date.now()}-${idx}`,
+          title: req.title || 'Requirement',
+          type: (req.type || 'CPD') as CareerRequirement['type'],
+          status: 'Not Started' as CareerRequirement['status'],
+          description: req.description || '',
+          priority: req.priority || 'Medium' as CareerRequirement['priority'],
         }));
-    } catch (e) {
-        console.error(e);
-        return [];
+      }
+
+      return { analysis, requirements };
+    } catch (error: any) {
+      console.error('Error analyzing job description:', error);
+      return {
+        analysis: `I encountered an error analyzing the job description: ${error.message || 'Unknown error'}. Please ensure the Edge Function is deployed and configured correctly.`,
+        requirements: []
+      };
     }
   }
 };

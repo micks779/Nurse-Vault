@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, Save, Sparkles, BookOpen, Clock, CheckCircle, Plus, FileText, BrainCircuit, ChevronRight, Loader2, X } from 'lucide-react';
+import { Mic, Square, Play, Save, Sparkles, BookOpen, Clock, CheckCircle, Plus, FileText, BrainCircuit, ChevronRight, Loader2, X, Edit2, Trash2 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { aiService } from '../services/aiService';
 import { CPDEntry, VoiceLog, Reflection, Recommendation, UserProfile } from '../types';
@@ -85,7 +85,7 @@ const Learning: React.FC = () => {
 /* --- Helper Components --- */
 
 /**
- * A Textarea wrapper that includes a microphone button for voice-to-text input.
+ * A Textarea wrapper that includes a microphone button for real-time voice-to-text dictation.
  */
 const VoiceInputArea: React.FC<{ 
   value: string; 
@@ -93,93 +93,134 @@ const VoiceInputArea: React.FC<{
   placeholder?: string;
   minRows?: number;
 }> = ({ value, onChange, placeholder, minRows = 3 }) => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const [isDictating, setIsDictating] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const isManuallyStoppedRef = useRef<boolean>(false);
+  const accumulatedTranscriptRef = useRef<string>(''); // Persistent transcript across restarts
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      alert("Microphone access denied.");
+  const startDictation = () => {
+    // Check if browser supports Web Speech API
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert("Your browser doesn't support voice dictation. Please use Chrome, Edge, or Safari.");
+      return;
     }
+
+    // Initialize accumulated transcript with current value if starting fresh
+    if (!isDictating) {
+      accumulatedTranscriptRef.current = value;
+    }
+
+    isManuallyStoppedRef.current = false;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-GB'; // British English for UK nurses
+
+    recognition.onstart = () => {
+      setIsDictating(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = accumulatedTranscriptRef.current; // Always start from accumulated transcript
+
+      // Process only new results since last event
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      // Update accumulated transcript (only final parts)
+      accumulatedTranscriptRef.current = finalTranscript;
+      
+      // Update state with accumulated + interim
+      onChange(finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error === 'no-speech') {
+        // User paused - this is normal, recognition will auto-restart
+        return;
+      }
+      setIsDictating(false);
+      if (event.error === 'not-allowed') {
+        alert("Microphone access denied. Please enable microphone permissions.");
+      }
+    };
+
+    recognition.onend = () => {
+      // Only restart if it wasn't manually stopped and we're still in dictation mode
+      if (!isManuallyStoppedRef.current && isDictating) {
+        try {
+          // Restart recognition - transcript is preserved in accumulatedTranscriptRef
+          recognition.start();
+        } catch (e) {
+          // Recognition already started or error occurred
+          console.log('Recognition restart:', e);
+        }
+      } else {
+        setIsDictating(false);
+      }
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setIsProcessing(true);
-      
-      mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = async () => {
-          const base64String = reader.result as string;
-          const base64 = base64String.split(',')[1];
-          
-          try {
-            const result = await aiService.processVoiceNote(base64, 'audio/webm');
-            // Append transcribed text to existing value
-            const newText = value ? `${value} ${result.transcription}` : result.transcription;
-            onChange(newText);
-          } catch (e) {
-            console.error(e);
-            alert("Error transcribing audio.");
-          } finally {
-            setIsProcessing(false);
-          }
-        };
-      };
+  const stopDictation = () => {
+    isManuallyStoppedRef.current = true;
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsDictating(false);
     }
+    // Keep value - don't clear it
   };
 
   return (
     <div className="relative">
       <textarea 
-        className={`w-full rounded-lg border-slate-300 shadow-sm p-3 border focus:ring-1 focus:ring-brand-primary pr-12 ${isProcessing ? 'bg-slate-50' : ''}`}
+        className={`w-full rounded-lg border-slate-300 shadow-sm p-3 border focus:ring-1 focus:ring-brand-primary pr-12 ${isDictating ? 'bg-brand-primary/5 border-brand-primary' : ''}`}
         rows={minRows}
         placeholder={placeholder}
         value={value}
-        disabled={isProcessing}
         onChange={(e) => onChange(e.target.value)}
       />
       
       <div className="absolute bottom-3 right-3">
-        {isProcessing ? (
-          <Loader2 className="animate-spin text-brand-primary" size={20} />
-        ) : isRecording ? (
+        {isDictating ? (
           <button 
-            onClick={stopRecording}
+            onClick={stopDictation}
             className="flex items-center justify-center h-8 w-8 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors animate-pulse"
-            title="Stop Recording"
+            title="Stop Dictation"
             type="button"
           >
             <Square size={14} fill="currentColor" />
           </button>
         ) : (
           <button 
-            onClick={startRecording}
+            onClick={startDictation}
             className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-100 text-slate-500 hover:bg-brand-primary/10 hover:text-brand-primary transition-colors"
-            title="Dictate Answer"
+            title="Start Dictation (speak and text will appear)"
             type="button"
           >
             <Mic size={16} />
           </button>
         )}
       </div>
+      {isDictating && (
+        <div className="absolute top-2 left-3 text-xs text-brand-primary font-medium flex items-center gap-1">
+          <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse"></div>
+          Listening...
+        </div>
+      )}
     </div>
   );
 };
@@ -278,135 +319,222 @@ const CPDTab: React.FC<{ entries: CPDEntry[], refresh: () => void }> = ({ entrie
   );
 };
 
-const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, refresh }) => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
-  
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      setTranscript(null);
-    } catch (err) {
-      alert("Microphone access denied. Please enable permissions.");
+// Voice Log Entry Component with Edit and Delete
+const VoiceLogEntry: React.FC<{ 
+  log: VoiceLog; 
+  onDelete: () => void; 
+  onEdit: (text: string) => void;
+}> = ({ log, onDelete, onEdit }) => {
+  const handleDelete = () => {
+    if (confirm('Are you sure you want to delete this voice log?')) {
+      onDelete();
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setIsProcessing(true);
-      
-      mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = async () => {
-          const base64String = reader.result as string;
-          const base64 = base64String.split(',')[1];
-          
-          try {
-            const result = await aiService.processVoiceNote(base64, 'audio/webm');
-            setTranscript(result.transcription);
-            setSuggestion(result.suggestion);
-          } catch (e) {
-            console.error(e);
-            setTranscript("Error transcribing audio.");
-          } finally {
-            setIsProcessing(false);
-          }
-        };
-      };
+  return (
+    <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-4 hover:border-brand-primary/30 transition-colors">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+        <Play size={20} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="line-clamp-2 text-sm text-brand-charcoal font-medium">{log.transcription}</p>
+        <p className="text-xs text-slate-500 mt-1">{new Date(log.date).toLocaleDateString()} • {log.suggestedType}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onEdit(log.transcription)}
+          className="p-2 rounded-lg text-slate-600 hover:bg-brand-primary/10 hover:text-brand-primary transition-colors"
+          title="Edit this voice log"
+        >
+          <Edit2 size={18} />
+        </button>
+        <button
+          onClick={handleDelete}
+          className="p-2 rounded-lg text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+          title="Delete this voice log"
+        >
+          <Trash2 size={18} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, refresh }) => {
+  const [isDictating, setIsDictating] = useState(false);
+  const [transcript, setTranscript] = useState<string>('');
+  const recognitionRef = useRef<any>(null);
+  const isManuallyStoppedRef = useRef<boolean>(false);
+  const accumulatedTranscriptRef = useRef<string>(''); // Persistent transcript across restarts
+
+  const startDictation = () => {
+    // Check if browser supports Web Speech API
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert("Your browser doesn't support voice dictation. Please use Chrome, Edge, or Safari.");
+      return;
     }
+
+    // Initialize accumulated transcript with current transcript if starting fresh
+    if (!isDictating) {
+      accumulatedTranscriptRef.current = transcript;
+    }
+
+    isManuallyStoppedRef.current = false;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-GB'; // British English for UK nurses
+
+    recognition.onstart = () => {
+      setIsDictating(true);
+      // Don't clear transcript - keep accumulating
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = accumulatedTranscriptRef.current; // Always start from accumulated transcript
+
+      // Process only new results since last event
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcriptPart = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcriptPart + ' ';
+        } else {
+          interimTranscript += transcriptPart;
+        }
+      }
+
+      // Update accumulated transcript (only final parts)
+      accumulatedTranscriptRef.current = finalTranscript;
+      
+      // Update state with accumulated + interim
+      setTranscript(finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error === 'no-speech') {
+        // User paused - this is normal, recognition will auto-restart
+        return;
+      }
+      setIsDictating(false);
+      if (event.error === 'not-allowed') {
+        alert("Microphone access denied. Please enable microphone permissions.");
+      }
+    };
+
+    recognition.onend = () => {
+      // Only restart if it wasn't manually stopped and we're still in dictation mode
+      if (!isManuallyStoppedRef.current && isDictating) {
+        try {
+          // Restart recognition - transcript is preserved in accumulatedTranscriptRef
+          recognition.start();
+        } catch (e) {
+          // Recognition already started or error occurred
+          console.log('Recognition restart:', e);
+        }
+      } else {
+        setIsDictating(false);
+      }
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+  };
+
+  const stopDictation = () => {
+    isManuallyStoppedRef.current = true;
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsDictating(false);
+    }
+    // Keep transcript - don't clear it
   };
 
   const handleSave = async () => {
-    if (!transcript) return;
+    if (!transcript.trim()) {
+      alert("Please dictate some text before saving.");
+      return;
+    }
+    
     const log: VoiceLog = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString(),
-      durationSeconds: 0, // Mock
+      durationSeconds: 0,
       transcription: transcript,
       status: 'Processed',
-      suggestedType: suggestion as any || 'CPD'
+      suggestedType: 'CPD' // Default, user can categorize later
     };
     await dataService.addVoiceLog(log);
     
-    // Also add to CPD log automatically for this demo if it's CPD
-    if (suggestion === 'CPD') {
-      await dataService.addCPD({
-        id: Math.random().toString(36).substr(2, 9),
-        title: 'Voice Note Entry',
-        date: new Date().toISOString().split('T')[0],
-        hours: 0.5,
-        participatory: false,
-        reflection: transcript,
-        category: 'Voice Log',
-        tags: ['Voice']
-      });
-    }
+    // Also add to CPD log automatically
+    await dataService.addCPD({
+      id: Math.random().toString(36).substr(2, 9),
+      title: 'Voice Note Entry',
+      date: new Date().toISOString().split('T')[0],
+      hours: 0.5,
+      participatory: false,
+      reflection: transcript,
+      category: 'Voice Log',
+      tags: ['Voice']
+    });
 
-    setTranscript(null);
+    setTranscript('');
     refresh();
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center justify-center rounded-2xl bg-brand-primary p-8 text-white">
-        <div className={`mb-6 flex h-20 w-20 items-center justify-center rounded-full transition-all ${isRecording ? 'bg-rose-500 animate-pulse' : 'bg-brand-primaryDark'}`}>
+        <div className={`mb-6 flex h-20 w-20 items-center justify-center rounded-full transition-all ${isDictating ? 'bg-rose-500 animate-pulse' : 'bg-brand-primaryDark'}`}>
           <Mic size={32} />
         </div>
         
-        {!isRecording ? (
-          <button onClick={startRecording} className="rounded-full bg-brand-mint px-8 py-3 font-semibold text-brand-primary hover:bg-white transition-colors">
-            Start Recording
+        {!isDictating ? (
+          <button onClick={startDictation} className="rounded-full bg-brand-mint px-8 py-3 font-semibold text-brand-primary hover:bg-white transition-colors">
+            Start Dictation
           </button>
         ) : (
-          <button onClick={stopRecording} className="rounded-full bg-rose-600 px-8 py-3 font-semibold text-white hover:bg-rose-700 transition-colors">
-            Stop Recording
+          <button onClick={stopDictation} className="rounded-full bg-rose-600 px-8 py-3 font-semibold text-white hover:bg-rose-700 transition-colors">
+            Stop Dictation
           </button>
         )}
-        <p className="mt-4 text-sm text-brand-mint/80">Record your thoughts, recent learning, or reflections.</p>
+        <p className="mt-4 text-sm text-brand-mint/80">Speak and your words will appear as text in real-time.</p>
       </div>
 
-      {isProcessing && (
-         <div className="p-8 text-center text-slate-500">
-           <Loader2 className="animate-spin mx-auto mb-2 text-brand-primary" />
-           Processing audio with AI...
-         </div>
-      )}
-
-      {transcript && !isProcessing && (
+      {transcript && (
         <div className="rounded-xl border border-brand-mint bg-brand-mint/10 p-6 animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 mb-4">
              <Sparkles className="text-brand-primary mt-1" size={20} />
              <div className="flex-1">
-               <h3 className="font-semibold text-brand-primary">Transcript Ready</h3>
-               <p className="mt-2 text-slate-700">{transcript}</p>
-               <div className="mt-4 flex items-center gap-4">
-                 <span className="text-xs font-medium uppercase tracking-wider text-brand-primary bg-white px-2 py-1 rounded border border-brand-mint">
-                   Suggested: {suggestion}
-                 </span>
-                 <button onClick={handleSave} className="flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primaryDark">
-                   <Save size={16} /> Save to Log
-                 </button>
-               </div>
+               <h3 className="font-semibold text-brand-primary">Dictation Ready</h3>
+               <p className="text-sm text-slate-600 mt-1">Review and edit your text, then save.</p>
              </div>
+          </div>
+          
+          <textarea
+            className="w-full bg-white rounded-lg p-4 mb-4 border border-slate-200 text-sm text-slate-700 min-h-[120px]"
+            value={transcript}
+            onChange={(e) => setTranscript(e.target.value)}
+            placeholder="Your dictated text will appear here..."
+          />
+          
+          <div className="flex gap-3">
+            <button 
+              onClick={handleSave}
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors"
+            >
+              <Save size={16} /> Save to Log
+            </button>
+            <button 
+              onClick={() => setTranscript('')}
+              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+            >
+              Clear
+            </button>
           </div>
         </div>
       )}
@@ -414,16 +542,18 @@ const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, r
       <div className="space-y-4">
         <h3 className="font-semibold text-brand-charcoal">Recent Voice Logs</h3>
         {logs.map(log => (
-           <div key={log.id} className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-4">
-             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-               <Play size={20} />
-             </div>
-             <div className="flex-1">
-               <p className="line-clamp-1 text-sm text-brand-charcoal font-medium">{log.transcription}</p>
-               <p className="text-xs text-slate-500">{new Date(log.date).toLocaleDateString()} • {log.suggestedType}</p>
-             </div>
-           </div>
+          <VoiceLogEntry key={log.id} log={log} onDelete={async () => {
+            await dataService.deleteVoiceLog(log.id);
+            refresh();
+          }} onEdit={(editedText) => {
+            setTranscript(editedText);
+            // Scroll to top to show edit area
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }} />
         ))}
+        {logs.length === 0 && (
+          <p className="text-center text-slate-500 py-10">No voice logs yet. Start dictating to create your first log!</p>
+        )}
       </div>
     </div>
   );

@@ -685,6 +685,41 @@ export const dataService = {
     }
   },
 
+  addCareerRequirement: async (careerPathId: string, requirement: Omit<CareerRequirement, 'id'>): Promise<CareerRequirement> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data, error } = await supabase
+        .from('career_requirements')
+        .insert({
+          career_path_id: careerPathId,
+          title: requirement.title,
+          type: requirement.type,
+          status: requirement.status || 'Not Started',
+          description: requirement.description || ''
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding requirement:', error);
+        throw error;
+      }
+
+      return {
+        id: data.id,
+        title: data.title,
+        type: data.type as CareerRequirement['type'],
+        status: data.status as CareerRequirement['status'],
+        description: data.description
+      };
+    } catch (error: any) {
+      console.error('Error in addCareerRequirement:', error);
+      throw new Error(error.message || 'Failed to add requirement');
+    }
+  },
+
   getReflections: async (): Promise<Reflection[]> => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -779,6 +814,37 @@ export const dataService = {
     } catch (error) {
       console.error('Error in getVoiceLogs:', error);
       return [];
+    }
+  },
+
+  deleteVoiceLog: async (id: string): Promise<void> => {
+    try {
+      const { error } = await supabase
+        .from('voice_logs')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error in deleteVoiceLog:', error);
+      throw error;
+    }
+  },
+
+  updateVoiceLog: async (id: string, updates: Partial<VoiceLog>): Promise<VoiceLog> => {
+    try {
+      const { data, error } = await supabase
+        .from('voice_logs')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as VoiceLog;
+    } catch (error) {
+      console.error('Error in updateVoiceLog:', error);
+      throw error;
     }
   },
 

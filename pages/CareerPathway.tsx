@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { dataService } from '../services/dataService';
-import { CareerPath, CareerRequirement } from '../types';
-import { Trophy, CheckCircle, Circle, ArrowRight, Loader, Sparkles, Edit2, X, Save, Plus, ExternalLink, BookOpen } from 'lucide-react';
+import { CareerPath, CareerRequirement, Competency } from '../types';
+import { Trophy, CheckCircle, Circle, ArrowRight, Loader, Sparkles, Edit2, X, Save, Plus, ExternalLink, BookOpen, Upload, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 
 const CareerPathway: React.FC = () => {
   const [path, setPath] = useState<CareerPath | null>(null);
@@ -9,6 +9,12 @@ const CareerPathway: React.FC = () => {
   const [recommendation, setRecommendation] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [competencies, setCompetencies] = useState<Competency[]>([]);
+  const [jdText, setJdText] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<{ analysis: string; requirements: CareerRequirement[] } | null>(null);
+  const [showJdModal, setShowJdModal] = useState(false);
+  const [showSalaryDetails, setShowSalaryDetails] = useState(false);
   const [editForm, setEditForm] = useState({
     currentBand: '',
     targetBand: '',
@@ -19,7 +25,17 @@ const CareerPathway: React.FC = () => {
 
   useEffect(() => {
     loadCareerPath();
+    loadCompetencies();
   }, []);
+
+  const loadCompetencies = async () => {
+    try {
+      const comps = await dataService.getCompetencies();
+      setCompetencies(comps);
+    } catch (error) {
+      console.error('Error loading competencies:', error);
+    }
+  };
 
   const loadCareerPath = async () => {
     try {
@@ -106,9 +122,73 @@ const CareerPathway: React.FC = () => {
     }
   };
 
-  const generateAIRecommendation = () => {
-    // Mocking the "AI" or "Rule-Based" engine
-    setRecommendation("Based on your path to Band 6, you should prioritize the 'Mentorship Qualification'. We found a course 'SLAiP Level 6' starting next month at your Trust. Completing this will increase your readiness by 25%.");
+  const handleFileUpload = async (file: File) => {
+    try {
+      let text = '';
+      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        text = await file.text();
+      } else {
+        // For PDF/Word, prompt user to paste
+        setJdText('');
+        alert('Please paste the job description text in the text area below.');
+        setShowJdModal(true);
+        return;
+      }
+      setJdText(text);
+      setShowJdModal(true);
+    } catch (error) {
+      console.error('Error reading file:', error);
+      alert('Error reading file. Please paste the job description text instead.');
+      setShowJdModal(true);
+    }
+  };
+
+  const handleAnalyzeJD = async () => {
+    if (!jdText.trim() || !path) {
+      alert('Please enter a job description and ensure your career path is configured.');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const userSkills = competencies
+        .filter(c => c.status === 'Signed Off')
+        .map(c => c.skillName)
+        .join(', ');
+
+      const context = `
+Current Profile:
+- Current Band: ${path.currentBand}
+- Target Band: ${path.targetBand}
+- Specialty: ${path.specialty}
+- Current Competencies: ${userSkills || 'None logged yet'}
+
+Job Description:
+${jdText}
+`;
+
+      // Import aiService dynamically to avoid exposing API key in bundle if not set
+      const { aiService } = await import('../services/aiService');
+      const result = await aiService.analyzeJobDescriptionAndCreatePath(context, path);
+      
+      setAnalysisResult(result);
+      
+      // Add requirements to career path
+      if (result.requirements && result.requirements.length > 0) {
+        for (const req of result.requirements) {
+          await dataService.addCareerRequirement(path.id, req);
+        }
+        await loadCareerPath();
+      }
+      
+      setShowJdModal(false);
+      setJdText('');
+    } catch (error: any) {
+      console.error('Error analyzing JD:', error);
+      alert(`Error analyzing job description: ${error.message || 'Unknown error'}. Please check your VITE_GEMINI_API_KEY is set in .env.local if you want to use AI analysis.`);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   if (loading) return <div className="p-10 flex justify-center text-brand-primary"><Loader className="animate-spin" /></div>;
@@ -248,7 +328,7 @@ const CareerPathway: React.FC = () => {
           </div>
         </div>
 
-        {/* AI Recommendations */}
+        {/* Smart Recommendations */}
         <div className="space-y-6">
            <div className="rounded-xl border border-brand-primary/10 bg-brand-primary/5 p-6">
               <div className="flex items-center gap-2 text-brand-primary mb-4">
@@ -256,56 +336,132 @@ const CareerPathway: React.FC = () => {
                 <h3 className="font-bold">Smart Recommendations</h3>
               </div>
               
-              {!recommendation ? (
-                <div className="text-center py-6">
-                  <p className="text-sm text-slate-600 mb-4">Get personalized training advice to close your skills gap.</p>
+              {analysisResult ? (
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-lg border border-brand-primary/20">
+                    <h4 className="font-semibold text-brand-charcoal mb-2">Analysis</h4>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{analysisResult.analysis}</p>
+                  </div>
+                  
+                  {analysisResult.requirements.length > 0 && (
+                    <div className="bg-white p-4 rounded-lg border border-brand-primary/20">
+                      <h4 className="font-semibold text-brand-charcoal mb-2">
+                        Added {analysisResult.requirements.length} Requirements
+                      </h4>
+                      <p className="text-xs text-slate-600">
+                        Check the "Core Requirements" section below to see your personalized career path.
+                      </p>
+                    </div>
+                  )}
+                  
                   <button 
-                    onClick={generateAIRecommendation}
-                    className="w-full rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors shadow-sm"
+                    onClick={() => {
+                      setAnalysisResult(null);
+                      setShowJdModal(true);
+                    }}
+                    className="w-full rounded-lg border border-brand-primary/20 bg-white px-4 py-2 text-sm font-medium text-brand-primary hover:bg-brand-primary/5 transition-colors"
                   >
-                    Analyze My Path
+                    Analyze Another Job Description
                   </button>
                 </div>
               ) : (
-                <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                  <p className="text-sm text-brand-charcoal leading-relaxed bg-white p-4 rounded-lg border border-brand-primary/10 shadow-sm">
-                    {recommendation}
-                  </p>
-                  <button onClick={() => setRecommendation(null)} className="mt-4 text-xs text-brand-primary hover:text-brand-primaryDark font-medium">
-                    Refresh Analysis
-                  </button>
+                <div className="space-y-4">
+                  <div className="bg-brand-mint/10 border border-brand-mint/30 rounded-lg p-4">
+                    <h4 className="font-semibold text-brand-charcoal mb-2 flex items-center gap-2">
+                      <Sparkles size={16} className="text-brand-primary" />
+                      Why Upload a Job Description?
+                    </h4>
+                    <p className="text-sm text-slate-700 mb-3">
+                      Uploading a job description is the <strong>best way to create a personalized career path</strong> because it allows us to:
+                    </p>
+                    <ul className="text-sm text-slate-700 space-y-1.5 list-disc list-inside ml-2">
+                      <li>Compare your current skills and competencies with the role requirements</li>
+                      <li>Identify exactly what qualifications, training, or experience you need</li>
+                      <li>Create a tailored list of requirements specific to that role</li>
+                      <li>See the gap between where you are now and where you want to be</li>
+                      <li>Get actionable steps to achieve your career goals</li>
+                    </ul>
+                    <p className="text-xs text-slate-600 mt-3 italic">
+                      Simply paste the job description text or upload the file, and we'll analyze it to create your personalized career pathway.
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <input
+                      type="file"
+                      id="jd-upload"
+                      accept=".pdf,.doc,.docx,.txt"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileUpload(file);
+                      }}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="jd-upload"
+                      className="flex items-center justify-center gap-2 w-full rounded-lg border-2 border-dashed border-brand-primary/30 bg-white px-4 py-3 text-sm font-medium text-brand-primary hover:border-brand-primary hover:bg-brand-primary/5 cursor-pointer transition-colors"
+                    >
+                      <Upload size={18} />
+                      Upload Job Description (PDF, Word, or TXT)
+                    </label>
+                    
+                    <button
+                      onClick={() => setShowJdModal(true)}
+                      className="w-full rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors shadow-sm"
+                    >
+                      Or Paste Job Description Text
+                    </button>
+                  </div>
                 </div>
               )}
            </div>
 
            <div className="rounded-xl border border-slate-200 bg-white p-6">
-             <h3 className="font-bold text-brand-charcoal mb-4">Salary Impact</h3>
-             {path.currentSalary && path.targetSalary ? (
-               <div className="space-y-3">
-                 <div className="flex justify-between text-sm">
-                   <span className="text-slate-500">Current ({path.currentBand})</span>
-                   <span className="font-medium text-brand-charcoal">£{path.currentSalary.toLocaleString()}</span>
-                 </div>
-                 <div className="flex justify-between text-sm">
-                   <span className="text-slate-500">Target ({path.targetBand})</span>
-                   <span className="font-medium text-brand-primary">£{path.targetSalary.toLocaleString()}</span>
-                 </div>
-                 <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-                   <span className="text-xs font-medium text-slate-400">Potential Increase</span>
-                   <span className="text-lg font-bold text-brand-primary">
-                     {calculateSalaryDifference() > 0 ? '+' : ''}£{calculateSalaryDifference().toLocaleString()}
-                   </span>
-                 </div>
-               </div>
-             ) : (
-               <div className="text-center py-4">
-                 <p className="text-sm text-slate-500 mb-2">Add salary information to see impact</p>
-                 <button
-                   onClick={() => setShowEditModal(true)}
-                   className="text-xs text-brand-primary hover:underline"
-                 >
-                   Edit Path
-                 </button>
+             <button
+               onClick={() => setShowSalaryDetails(!showSalaryDetails)}
+               className="w-full flex items-center justify-between text-left"
+             >
+               <h3 className="font-bold text-brand-charcoal">Salary Information</h3>
+               {showSalaryDetails ? (
+                 <ChevronUp size={20} className="text-slate-400" />
+               ) : (
+                 <ChevronDown size={20} className="text-slate-400" />
+               )}
+             </button>
+             
+             {showSalaryDetails && (
+               <div className="mt-4 space-y-3">
+                 {path.currentSalary && path.targetSalary ? (
+                   <>
+                     <div className="flex justify-between text-sm">
+                       <span className="text-slate-500">Current ({path.currentBand})</span>
+                       <span className="font-medium text-brand-charcoal">£{path.currentSalary.toLocaleString()}</span>
+                     </div>
+                     <div className="flex justify-between text-sm">
+                       <span className="text-slate-500">Target ({path.targetBand})</span>
+                       <span className="font-medium text-brand-primary">£{path.targetSalary.toLocaleString()}</span>
+                     </div>
+                     <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                       <span className="text-xs font-medium text-slate-400">Potential Increase</span>
+                       <span className="text-lg font-bold text-brand-primary">
+                         {calculateSalaryDifference() > 0 ? '+' : ''}£{calculateSalaryDifference().toLocaleString()}
+                       </span>
+                     </div>
+                   </>
+                 ) : (
+                   <div className="text-center py-4">
+                     <p className="text-sm text-slate-500 mb-2">Add salary information to see impact</p>
+                     <button
+                       onClick={() => {
+                         setShowSalaryDetails(false);
+                         setShowEditModal(true);
+                       }}
+                       className="text-xs text-brand-primary hover:underline"
+                     >
+                       Edit Path
+                     </button>
+                   </div>
+                 )}
                </div>
              )}
            </div>
@@ -444,6 +600,95 @@ const CareerPathway: React.FC = () => {
                   <>
                     <Save size={16} />
                     Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job Description Upload/Input Modal */}
+      {showJdModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !isAnalyzing && setShowJdModal(false)}
+        >
+          <div 
+            className="w-full max-w-2xl rounded-xl bg-white shadow-xl max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 p-6">
+              <div>
+                <h2 className="text-xl font-bold text-brand-charcoal">Analyze Job Description</h2>
+                <p className="text-sm text-slate-500 mt-1">Paste or upload a job description to get personalized career path recommendations</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!isAnalyzing) {
+                    setShowJdModal(false);
+                    setJdText('');
+                  }
+                }}
+                className="text-slate-400 hover:text-slate-600"
+                disabled={isAnalyzing}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-brand-charcoal mb-2">
+                    Job Description Text
+                  </label>
+                  <textarea
+                    value={jdText}
+                    onChange={(e) => setJdText(e.target.value)}
+                    placeholder="Paste the job description here... Include details about required qualifications, skills, experience, and responsibilities."
+                    className="w-full h-64 rounded-lg border border-slate-300 px-4 py-3 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary resize-none"
+                    disabled={isAnalyzing}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    The more detail you include, the better the recommendations will be.
+                  </p>
+                </div>
+
+                {isAnalyzing && (
+                  <div className="flex items-center justify-center gap-2 p-4 bg-brand-primary/5 rounded-lg">
+                    <Loader className="animate-spin text-brand-primary" size={20} />
+                    <span className="text-sm text-brand-charcoal">Analyzing job description and creating career path...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-slate-200 p-6">
+              <button
+                onClick={() => {
+                  setShowJdModal(false);
+                  setJdText('');
+                }}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                disabled={isAnalyzing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAnalyzeJD}
+                disabled={isAnalyzing || !jdText.trim() || !path}
+                className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <Loader className="animate-spin" size={16} />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} />
+                    Analyze & Create Path
                   </>
                 )}
               </button>
