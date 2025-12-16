@@ -627,10 +627,26 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
   const [context, setContext] = useState('');
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
+  const [codeThemes, setCodeThemes] = useState<string[]>([]);
   const [finalReflection, setFinalReflection] = useState('');
   const [loading, setLoading] = useState(false);
   const [apiUsage, setApiUsage] = useState<{ callsToday: number; limit: number; remaining: number } | null>(null);
   const [selectedReflection, setSelectedReflection] = useState<Reflection | null>(null);
+  
+  // NMC's 4 required reflection questions
+  const nmcQuestions = [
+    "What was the nature of the CPD activity and/or practice-related feedback and/or event or experience in your practice?",
+    "What did you learn from the CPD activity and/or feedback and/or event or experience in your practice?",
+    "How did you change or improve your practice as a result?",
+    "How is this relevant to the Code?"
+  ];
+  
+  const codeThemeOptions = [
+    'Prioritise people',
+    'Practise effectively',
+    'Preserve safety',
+    'Promote professionalism and trust'
+  ];
 
   // Load API usage stats
   useEffect(() => {
@@ -651,42 +667,47 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
       return;
     }
 
-    setLoading(true);
-    try {
-      const qs = await aiService.getReflectionPrompts(context.trim());
-      setQuestions(qs);
-      setAnswers(new Array(qs.length).fill(''));
-      setLoading(false);
-      setStep('questions');
-      // Refresh usage stats
-      const usage = await getApiUsage();
-      setApiUsage(usage);
-    } catch (e: any) {
-      setLoading(false);
-      if (e.isRateLimit) {
-        alert(`Rate limit exceeded: ${e.message || "You've reached your daily limit of AI calls. Please try again tomorrow."}`);
-      } else {
-        alert("Could not generate questions. Please try again.");
-      }
-    }
+    // Use NMC's 4 standardized questions (no AI needed - they're required by NMC)
+    setQuestions(nmcQuestions);
+    setAnswers(new Array(nmcQuestions.length).fill(''));
+    setCodeThemes([]);
+    setStep('questions');
   };
 
   const generateReflection = async () => {
+    // Validate all answers are filled
+    if (answers.some(a => !a.trim())) {
+      alert("Please answer all 4 questions before generating the reflection.");
+      return;
+    }
+    
+    if (codeThemes.length === 0) {
+      alert("Please select at least one Code theme for question 4.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await aiService.generateStructuredReflection(context, questions, answers);
-      setFinalReflection(result);
+      // Generate NMC-compliant structured reflection
+      const result = await aiService.generateNMCReflection(context, answers, codeThemes);
+      
+      if (result && !result.includes("Error") && !result.includes("Could not")) {
+        setFinalReflection(result);
+        setStep('preview');
+        // Refresh usage stats
+        const usage = await getApiUsage();
+        setApiUsage(usage);
+      } else {
+        throw new Error(result || "Failed to generate reflection");
+      }
       setLoading(false);
-      setStep('preview');
-      // Refresh usage stats
-      const usage = await getApiUsage();
-      setApiUsage(usage);
     } catch (e: any) {
       setLoading(false);
+      console.error('Reflection generation error:', e);
       if (e.isRateLimit) {
         alert(`Rate limit exceeded: ${e.message || "You've reached your daily limit of AI calls. Please try again tomorrow."}`);
       } else {
-        alert("Could not generate reflection. Please try again.");
+        alert(`Could not generate reflection: ${e.message || "Please check your connection and try again."}`);
       }
     }
   };
@@ -696,14 +717,22 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       title: context.substring(0, 30) + '...',
-      content: finalReflection,
-      tags: ['AI Coached'],
+      content: finalReflection, // Legacy field for backwards compatibility
+      // NMC format - store answers separately
+      nmcQuestion1: answers[0] || '',
+      nmcQuestion2: answers[1] || '',
+      nmcQuestion3: answers[2] || '',
+      nmcQuestion4: answers[3] || '',
+      codeThemes: codeThemes,
+      tags: ['NMC Compliant', 'AI Coached'],
       method: 'Written'
     };
     await dataService.addReflection(newRef);
     refresh();
     setStep('list');
     setContext('');
+    setAnswers([]);
+    setCodeThemes([]);
   };
 
   return (
@@ -713,9 +742,9 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
           <div className="rounded-xl bg-gradient-to-r from-brand-primary to-brand-primaryDark p-6 text-white shadow-md">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h2 className="text-xl font-bold">AI Reflection Coach</h2>
+                <h2 className="text-xl font-bold">NMC Reflective Account Coach</h2>
                 <p className="mt-2 text-brand-mint/90 opacity-90">
-                  Not sure how to write your reflection? Tell me briefly what happened, and I'll interview you to build a perfect NMC-compliant entry.
+                  Create NMC-compliant reflective accounts for revalidation. Tell me briefly what happened, and I'll guide you through the 4 required NMC questions.
                 </p>
               </div>
               {apiUsage && (
@@ -746,7 +775,15 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
                    <h4 className="font-semibold text-brand-charcoal">{ref.title}</h4>
                    <span className="text-xs text-slate-500">{ref.date}</span>
                  </div>
-                 <p className="mt-2 text-sm text-slate-600 whitespace-pre-line line-clamp-3">{ref.content}</p>
+                 <p className="mt-2 text-sm text-slate-600 whitespace-pre-line line-clamp-3">
+                   {ref.nmcQuestion1 ? (
+                     // Show NMC format if available
+                     `1. ${ref.nmcQuestion1.substring(0, 100)}...`
+                   ) : (
+                     // Fallback to legacy content
+                     ref.content
+                   )}
+                 </p>
                  <button 
                    onClick={() => setSelectedReflection(ref)}
                    className="mt-3 text-xs font-medium text-brand-primary hover:underline"
@@ -787,7 +824,45 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
                     )}
                   </div>
                   <div className="prose max-w-none">
-                    <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.content}</p>
+                    {selectedReflection.nmcQuestion1 ? (
+                      // Display NMC format
+                      <div className="space-y-6">
+                        <div>
+                          <h4 className="font-semibold text-brand-primary mb-2">1. What was the nature of the CPD activity and/or practice-related feedback and/or event or experience in your practice?</h4>
+                          <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.nmcQuestion1}</p>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-brand-primary mb-2">2. What did you learn from the CPD activity and/or feedback and/or event or experience in your practice?</h4>
+                          <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.nmcQuestion2}</p>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-brand-primary mb-2">3. How did you change or improve your practice as a result?</h4>
+                          <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.nmcQuestion3}</p>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-brand-primary mb-2">4. How is this relevant to the Code?</h4>
+                          <p className="text-slate-700 whitespace-pre-line leading-relaxed mb-3">{selectedReflection.nmcQuestion4}</p>
+                          {selectedReflection.codeThemes && selectedReflection.codeThemes.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {selectedReflection.codeThemes.map((theme, i) => (
+                                <span key={i} className="bg-brand-primary/10 text-brand-primary px-3 py-1 rounded-full text-sm">
+                                  {theme}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {selectedReflection.content && (
+                          <div className="mt-6 pt-6 border-t border-slate-200">
+                            <h4 className="font-semibold text-slate-600 mb-2">Structured Reflection:</h4>
+                            <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.content}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      // Legacy format
+                      <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.content}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -811,7 +886,7 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
              disabled={!context?.trim() || loading}
              className="w-full rounded-lg bg-brand-primary py-3 text-white font-medium hover:bg-brand-primaryDark disabled:opacity-50"
            >
-             {loading ? <Loader2 className="animate-spin mx-auto" /> : 'Next: Generate Questions'}
+             {loading ? <Loader2 className="animate-spin mx-auto" /> : 'Next: Answer NMC Questions'}
            </button>
            <button onClick={() => setStep('list')} className="w-full text-slate-500 text-sm py-2">Cancel</button>
         </div>
@@ -819,41 +894,92 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
 
       {step === 'questions' && (
          <div className="max-w-2xl mx-auto space-y-6">
-           <h3 className="text-lg font-bold text-brand-charcoal">Guiding Questions</h3>
+           <div className="rounded-lg bg-brand-mint/10 border border-brand-mint/20 p-4 mb-4">
+             <p className="text-sm text-slate-700">
+               <strong>NMC Revalidation Format:</strong> Answer these 4 questions to create a compliant reflective account for your NMC revalidation.
+             </p>
+           </div>
+           <h3 className="text-lg font-bold text-brand-charcoal">Reflective Account Questions</h3>
            <div className="space-y-6">
             {questions.map((q, i) => (
-              <div key={i}>
-                <label className="block text-sm font-medium text-brand-primary mb-2">{q}</label>
+              <div key={i} className="space-y-2">
+                <label className="block text-sm font-medium text-brand-primary mb-2">
+                  {i + 1}. {q}
+                </label>
                 <VoiceInputArea 
                   value={answers[i]}
-                  minRows={3}
+                  minRows={i === 3 ? 2 : 4} // Shorter for question 4
                   onChange={(text) => {
                     const newAns = [...answers];
                     newAns[i] = text;
                     setAnswers(newAns);
                   }}
-                  placeholder="Type or click the mic to dictate..."
+                  placeholder={i === 3 ? "Select Code themes below and explain relevance..." : "Type or click the mic to dictate..."}
                 />
+                {i === 3 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium text-slate-600 mb-2">Select one or more Code themes:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {codeThemeOptions.map((theme) => (
+                        <label key={theme} className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={codeThemes.includes(theme)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setCodeThemes([...codeThemes, theme]);
+                              } else {
+                                setCodeThemes(codeThemes.filter(t => t !== theme));
+                              }
+                            }}
+                            className="rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+                          />
+                          <span className="text-sm text-slate-700">{theme}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
            </div>
            <button 
              onClick={generateReflection}
-             disabled={loading}
-             className="w-full rounded-lg bg-brand-primary py-3 text-white font-medium hover:bg-brand-primaryDark disabled:opacity-50"
+             disabled={loading || answers.some(a => !a.trim()) || codeThemes.length === 0}
+             className="w-full rounded-lg bg-brand-primary py-3 text-white font-medium hover:bg-brand-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
            >
              {loading ? <Loader2 className="animate-spin mx-auto" /> : 'Generate Structured Reflection'}
            </button>
+           {codeThemes.length === 0 && answers[3] && (
+             <p className="text-sm text-amber-600 text-center">Please select at least one Code theme for question 4.</p>
+           )}
          </div>
       )}
 
       {step === 'preview' && (
         <div className="max-w-2xl mx-auto space-y-6">
+          <div className="rounded-lg bg-brand-mint/10 border border-brand-mint/20 p-4 mb-4">
+            <p className="text-sm text-slate-700">
+              <strong>✓ NMC Compliant:</strong> This reflection follows the NMC revalidation format and is ready for submission.
+            </p>
+          </div>
           <div className="rounded-xl border border-brand-mint bg-brand-mint/10 p-6">
-            <h3 className="text-lg font-bold text-brand-primary mb-4">Your Reflection</h3>
-            <div className="prose prose-sm text-slate-700 whitespace-pre-wrap">
+            <h3 className="text-lg font-bold text-brand-primary mb-4">Your NMC Reflective Account</h3>
+            <div className="prose prose-sm text-slate-700 whitespace-pre-wrap mb-4">
               {finalReflection}
             </div>
+            {codeThemes.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-brand-mint/20">
+                <p className="text-xs font-medium text-slate-600 mb-2">Code Themes:</p>
+                <div className="flex flex-wrap gap-2">
+                  {codeThemes.map((theme) => (
+                    <span key={theme} className="bg-brand-primary/10 text-brand-primary px-2 py-1 rounded text-xs">
+                      {theme}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
              <button onClick={() => setStep('questions')} className="flex-1 rounded-lg border border-slate-300 py-3 text-slate-700 font-medium hover:bg-slate-50">Edit Answers</button>

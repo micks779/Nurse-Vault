@@ -736,34 +736,46 @@ export const dataService = {
         throw error;
       }
 
-      return (data || []).map((ref: any) => ({
-        id: ref.id,
-        date: ref.date,
-        title: ref.title,
-        content: ref.content,
-        tags: ref.tags || [],
-        method: ref.method as Reflection['method']
+      // Map database fields to TypeScript interface
+      return (data || []).map((r: any) => ({
+        id: r.id,
+        date: r.date,
+        title: r.title,
+        content: r.content || '', // Legacy field
+        nmcQuestion1: r.nmc_question1,
+        nmcQuestion2: r.nmc_question2,
+        nmcQuestion3: r.nmc_question3,
+        nmcQuestion4: r.nmc_question4,
+        codeThemes: r.code_themes || [],
+        tags: r.tags || [],
+        method: (r.method as 'Written' | 'Voice') || 'Written'
       }));
     } catch (error) {
       console.error('Error in getReflections:', error);
       return [];
     }
   },
-
+  
   addReflection: async (reflection: Omit<Reflection, 'id'>): Promise<Reflection> => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // Map TypeScript interface to database fields
       const { data, error } = await supabase
         .from('reflections')
         .insert({
           user_id: user.id,
           date: reflection.date,
           title: reflection.title,
-          content: reflection.content,
+          content: reflection.content || '', // Legacy field for backwards compatibility
+          nmc_question1: reflection.nmcQuestion1,
+          nmc_question2: reflection.nmcQuestion2,
+          nmc_question3: reflection.nmcQuestion3,
+          nmc_question4: reflection.nmcQuestion4,
+          code_themes: reflection.codeThemes || [],
           tags: reflection.tags || [],
-          method: reflection.method
+          method: reflection.method || 'Written'
         })
         .select()
         .single();
@@ -773,13 +785,19 @@ export const dataService = {
         throw error;
       }
 
+      // Map back to TypeScript interface
       return {
         id: data.id,
         date: data.date,
         title: data.title,
-        content: data.content,
+        content: data.content || '',
+        nmcQuestion1: data.nmc_question1,
+        nmcQuestion2: data.nmc_question2,
+        nmcQuestion3: data.nmc_question3,
+        nmcQuestion4: data.nmc_question4,
+        codeThemes: data.code_themes || [],
         tags: data.tags || [],
-        method: data.method
+        method: (data.method as 'Written' | 'Voice') || 'Written'
       };
     } catch (error: any) {
       console.error('Error in addReflection:', error);

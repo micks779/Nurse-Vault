@@ -105,7 +105,13 @@ export interface Reflection {
   id: string;
   date: string;
   title: string;
-  content: string; // The structured reflective piece
+  content: string; // The structured reflective piece (legacy - for backwards compatibility)
+  // NMC Revalidation Format (4 questions)
+  nmcQuestion1?: string; // "What was the nature of the CPD activity and/or practice-related feedback and/or event or experience in your practice?"
+  nmcQuestion2?: string; // "What did you learn from the CPD activity and/or feedback and/or event or experience in your practice?"
+  nmcQuestion3?: string; // "How did you change or improve your practice as a result?"
+  nmcQuestion4?: string; // "How is this relevant to the Code?"
+  codeThemes?: string[]; // Selected Code themes: 'Prioritise people', 'Practise effectively', 'Preserve safety', 'Promote professionalism and trust'
   tags: string[];
   method: 'Written' | 'Voice';
 }

@@ -162,6 +162,47 @@ export const aiService = {
   },
 
   /**
+   * Generates NMC-compliant structured reflection from the 4 required questions.
+   */
+  generateNMCReflection: async (context: string, answers: string[], codeThemes: string[]): Promise<string> => {
+    try {
+      const nmcQuestions = [
+        "What was the nature of the CPD activity and/or practice-related feedback and/or event or experience in your practice?",
+        "What did you learn from the CPD activity and/or feedback and/or event or experience in your practice?",
+        "How did you change or improve your practice as a result?",
+        "How is this relevant to the Code?"
+      ];
+
+      const qaPairs = nmcQuestions.map((q, i) => `Q: ${q}\nA: ${answers[i] || 'Not answered'}`).join('\n\n');
+      const codeThemesText = codeThemes.length > 0 ? `\n\nCode Themes Selected: ${codeThemes.join(', ')}` : '';
+      
+      const prompt = `Context: ${context}\n\nNMC Reflective Account Answers:\n${qaPairs}${codeThemesText}\n\nWrite a formal, structured NMC-compliant reflective account (approximately 300-400 words) that weaves together the user's answers to all 4 NMC questions into a coherent narrative. The reflection should:\n- Flow naturally between the 4 questions\n- Demonstrate deep reflection and learning\n- Show clear links to the Code themes selected\n- Be suitable for NMC revalidation submission\n- Use professional nursing language\n\nFormat with clear sections or paragraphs.`;
+
+      const result = await callEdgeFunction('chat', {
+        userMessage: prompt,
+        currentPath: null,
+        competencies: [],
+      });
+
+      // Handle different response formats
+      if (typeof result === 'string') {
+        return result;
+      } else if (result?.result) {
+        return result.result;
+      } else if (result?.text) {
+        return result.text;
+      } else {
+        console.error('Unexpected response format from Edge Function:', result);
+        return "Could not generate reflection. Unexpected response format.";
+      }
+    } catch (error: any) {
+      console.error('Error generating NMC reflection:', error);
+      // Re-throw to let the UI handle it properly
+      throw error;
+    }
+  },
+
+  /**
    * Generates CPD recommendations based on profile.
    */
   getRecommendations: async (currentBand: string, targetBand: string, specialty: string): Promise<Recommendation[]> => {
