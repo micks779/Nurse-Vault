@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Square, Play, Save, Sparkles, BookOpen, Clock, CheckCircle, Plus, FileText, BrainCircuit, ChevronRight, Loader2, X, Edit2, Trash2 } from 'lucide-react';
 import { dataService } from '../services/dataService';
-import { aiService } from '../services/aiService';
+import { aiService, getApiUsage } from '../services/aiService';
 import { CPDEntry, VoiceLog, Reflection, Recommendation, UserProfile } from '../types';
 
 type Tab = 'cpd' | 'voice' | 'reflections' | 'recommendations' | 'revalidation';
@@ -337,8 +337,9 @@ const VoiceLogEntry: React.FC<{
         <Play size={20} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="line-clamp-2 text-sm text-brand-charcoal font-medium">{log.transcription}</p>
-        <p className="text-xs text-slate-500 mt-1">{new Date(log.date).toLocaleDateString()} • {log.suggestedType}</p>
+        <p className="text-sm text-brand-charcoal font-medium">{log.title || log.transcription.split('\n')[0]}</p>
+        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{log.transcription}</p>
+        <p className="text-xs text-slate-400 mt-1">{new Date(log.date).toLocaleDateString()} • {log.suggestedType}</p>
       </div>
       <div className="flex items-center gap-2">
         <button
@@ -363,6 +364,8 @@ const VoiceLogEntry: React.FC<{
 const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, refresh }) => {
   const [isDictating, setIsDictating] = useState(false);
   const [transcript, setTranscript] = useState<string>('');
+  const [title, setTitle] = useState<string>('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const recognitionRef = useRef<any>(null);
   const isManuallyStoppedRef = useRef<boolean>(false);
   const accumulatedTranscriptRef = useRef<string>(''); // Persistent transcript across restarts
@@ -454,9 +457,19 @@ const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, r
     // Keep transcript - don't clear it
   };
 
-  const handleSave = async () => {
+  const handleSaveClick = () => {
     if (!transcript.trim()) {
       alert("Please dictate some text before saving.");
+      return;
+    }
+    // Start with blank title - user can type their own
+    setTitle('');
+    setShowSaveModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!title.trim()) {
+      alert("Please enter a title for this voice log.");
       return;
     }
     
@@ -464,6 +477,7 @@ const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, r
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString(),
       durationSeconds: 0,
+      title: title.trim(),
       transcription: transcript,
       status: 'Processed',
       suggestedType: 'CPD' // Default, user can categorize later
@@ -473,7 +487,7 @@ const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, r
     // Also add to CPD log automatically
     await dataService.addCPD({
       id: Math.random().toString(36).substr(2, 9),
-      title: 'Voice Note Entry',
+      title: title.trim(),
       date: new Date().toISOString().split('T')[0],
       hours: 0.5,
       participatory: false,
@@ -483,6 +497,8 @@ const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, r
     });
 
     setTranscript('');
+    setTitle('');
+    setShowSaveModal(false);
     refresh();
   };
 
@@ -524,17 +540,64 @@ const VoiceTab: React.FC<{ logs: VoiceLog[], refresh: () => void }> = ({ logs, r
           
           <div className="flex gap-3">
             <button 
-              onClick={handleSave}
+              onClick={handleSaveClick}
               className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors"
             >
               <Save size={16} /> Save to Log
             </button>
             <button 
-              onClick={() => setTranscript('')}
+              onClick={() => {
+                setTranscript('');
+                setTitle('');
+              }}
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
             >
               Clear
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Save Modal with Title Input */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-xl">
+            <h3 className="text-lg font-bold text-brand-charcoal mb-4">Save Voice Log</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter a title for this voice log..."
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                  autoFocus
+                />
+                <p className="text-xs text-slate-500 mt-1">Give your voice log a descriptive title</p>
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleSave}
+                  className="flex-1 rounded-lg bg-brand-primary px-4 py-2 text-sm font-medium text-white hover:bg-brand-primaryDark transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSaveModal(false);
+                    setTitle('');
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -566,27 +629,66 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
   const [answers, setAnswers] = useState<string[]>([]);
   const [finalReflection, setFinalReflection] = useState('');
   const [loading, setLoading] = useState(false);
+  const [apiUsage, setApiUsage] = useState<{ callsToday: number; limit: number; remaining: number } | null>(null);
+  const [selectedReflection, setSelectedReflection] = useState<Reflection | null>(null);
+
+  // Load API usage stats
+  useEffect(() => {
+    const loadUsage = async () => {
+      const usage = await getApiUsage();
+      setApiUsage(usage);
+    };
+    loadUsage();
+    // Refresh usage after each AI call
+    const interval = setInterval(loadUsage, 30000); // Every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   const startCoaching = async () => {
+    // Only call AI if user explicitly requested and context is not empty
+    if (!context || !context.trim()) {
+      alert("Please enter some context before generating questions.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const qs = await aiService.getReflectionPrompts(context);
+      const qs = await aiService.getReflectionPrompts(context.trim());
       setQuestions(qs);
       setAnswers(new Array(qs.length).fill(''));
       setLoading(false);
       setStep('questions');
-    } catch (e) {
+      // Refresh usage stats
+      const usage = await getApiUsage();
+      setApiUsage(usage);
+    } catch (e: any) {
       setLoading(false);
-      alert("Could not generate questions. Please try again.");
+      if (e.isRateLimit) {
+        alert(`Rate limit exceeded: ${e.message || "You've reached your daily limit of AI calls. Please try again tomorrow."}`);
+      } else {
+        alert("Could not generate questions. Please try again.");
+      }
     }
   };
 
   const generateReflection = async () => {
     setLoading(true);
-    const result = await aiService.generateStructuredReflection(context, questions, answers);
-    setFinalReflection(result);
-    setLoading(false);
-    setStep('preview');
+    try {
+      const result = await aiService.generateStructuredReflection(context, questions, answers);
+      setFinalReflection(result);
+      setLoading(false);
+      setStep('preview');
+      // Refresh usage stats
+      const usage = await getApiUsage();
+      setApiUsage(usage);
+    } catch (e: any) {
+      setLoading(false);
+      if (e.isRateLimit) {
+        alert(`Rate limit exceeded: ${e.message || "You've reached your daily limit of AI calls. Please try again tomorrow."}`);
+      } else {
+        alert("Could not generate reflection. Please try again.");
+      }
+    }
   };
 
   const saveReflection = async () => {
@@ -609,17 +711,31 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
       {step === 'list' && (
         <>
           <div className="rounded-xl bg-gradient-to-r from-brand-primary to-brand-primaryDark p-6 text-white shadow-md">
-            <h2 className="text-xl font-bold">AI Reflection Coach</h2>
-            <p className="mt-2 text-brand-mint/90 opacity-90">
-              Not sure how to write your reflection? Tell me briefly what happened, and I'll interview you to build a perfect NMC-compliant entry.
-            </p>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-bold">AI Reflection Coach</h2>
+                <p className="mt-2 text-brand-mint/90 opacity-90">
+                  Not sure how to write your reflection? Tell me briefly what happened, and I'll interview you to build a perfect NMC-compliant entry.
+                </p>
+              </div>
+              {apiUsage && (
+                <div className="text-right text-sm bg-white/10 rounded-lg px-3 py-2">
+                  <div className="font-semibold">{apiUsage.remaining} / {apiUsage.limit} calls left</div>
+                  <div className="text-xs opacity-75">Today</div>
+                </div>
+              )}
+            </div>
             <button 
               onClick={() => setStep('context')}
-              className="mt-6 flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-bold text-brand-primary hover:bg-brand-mint transition-colors"
+              disabled={apiUsage?.remaining === 0}
+              className="mt-6 flex items-center gap-2 rounded-lg bg-white px-5 py-2.5 text-sm font-bold text-brand-primary hover:bg-brand-mint transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Sparkles size={18} />
               Start New Reflection
             </button>
+            {apiUsage?.remaining === 0 && (
+              <p className="mt-2 text-sm text-white/80">Daily limit reached. Try again tomorrow.</p>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -631,10 +747,52 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
                    <span className="text-xs text-slate-500">{ref.date}</span>
                  </div>
                  <p className="mt-2 text-sm text-slate-600 whitespace-pre-line line-clamp-3">{ref.content}</p>
-                 <button className="mt-3 text-xs font-medium text-brand-primary hover:underline">Read Full Entry</button>
+                 <button 
+                   onClick={() => setSelectedReflection(ref)}
+                   className="mt-3 text-xs font-medium text-brand-primary hover:underline"
+                 >
+                   Read Full Entry
+                 </button>
               </div>
             ))}
           </div>
+
+          {/* Reflection Detail Modal */}
+          {selectedReflection && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedReflection(null)}>
+              <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+                  <h3 className="text-xl font-bold text-brand-charcoal">{selectedReflection.title}</h3>
+                  <button 
+                    onClick={() => setSelectedReflection(null)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+                <div className="p-6">
+                  <div className="flex items-center gap-4 mb-4 text-sm text-slate-500">
+                    <span>{selectedReflection.date}</span>
+                    {selectedReflection.tags && selectedReflection.tags.length > 0 && (
+                      <div className="flex gap-2">
+                        {selectedReflection.tags.map((tag, i) => (
+                          <span key={i} className="bg-brand-mint/20 text-brand-primary px-2 py-1 rounded-full text-xs">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {selectedReflection.method && (
+                      <span className="text-slate-400">• {selectedReflection.method}</span>
+                    )}
+                  </div>
+                  <div className="prose max-w-none">
+                    <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedReflection.content}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -650,7 +808,7 @@ const ReflectionsTab: React.FC<{ reflections: Reflection[], refresh: () => void 
            />
            <button 
              onClick={startCoaching}
-             disabled={!context || loading}
+             disabled={!context?.trim() || loading}
              className="w-full rounded-lg bg-brand-primary py-3 text-white font-medium hover:bg-brand-primaryDark disabled:opacity-50"
            >
              {loading ? <Loader2 className="animate-spin mx-auto" /> : 'Next: Generate Questions'}

@@ -95,6 +95,7 @@ export interface VoiceLog {
   id: string;
   date: string;
   durationSeconds: number;
+  title?: string;
   transcription: string;
   status: 'Draft' | 'Processed';
   suggestedType?: 'CPD' | 'Reflection' | 'Competency';

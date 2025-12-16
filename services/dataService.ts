@@ -807,6 +807,7 @@ export const dataService = {
         id: log.id,
         date: log.date,
         durationSeconds: log.duration_seconds,
+        title: log.title || undefined,
         transcription: log.transcription,
         status: log.status as VoiceLog['status'],
         suggestedType: log.suggested_type as VoiceLog['suggestedType']
@@ -859,6 +860,7 @@ export const dataService = {
           user_id: user.id,
           date: log.date,
           duration_seconds: log.durationSeconds,
+          title: log.title || null,
           transcription: log.transcription,
           status: log.status,
           suggested_type: log.suggestedType || null
@@ -875,6 +877,7 @@ export const dataService = {
         id: data.id,
         date: data.date,
         durationSeconds: data.duration_seconds,
+        title: data.title || undefined,
         transcription: data.transcription,
         status: data.status,
         suggestedType: data.suggested_type || undefined

@@ -79,6 +79,29 @@ serve(async (req) => {
     const requestBody: GeminiRequest = await req.json();
     const { type, data } = requestBody;
 
+    // Rate limiting: Check user's API usage for today
+    const { data: usageToday, error: usageError } = await supabaseClient
+      .rpc('get_user_api_usage_today', { p_user_id: user.id });
+
+    const dailyLimit = 10; // 10 AI calls per user per day
+    const callsToday = usageToday || 0;
+
+    if (callsToday >= dailyLimit) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limit exceeded",
+          message: `You've reached your daily limit of ${dailyLimit} AI calls. Please try again tomorrow.`,
+          limit: dailyLimit,
+          used: callsToday,
+          resetTime: new Date(new Date().setHours(24, 0, 0, 0)).toISOString() // Next midnight
+        }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     let geminiResponse;
 
     switch (type) {
@@ -88,7 +111,7 @@ serve(async (req) => {
         const prompt = `Transcribe this audio verbatim. Then, analyze the content and categorize it into one of these types: 'CPD', 'Reflection', 'Competency'. Return the result as a JSON object with 'transcription' and 'suggestion' fields.`;
 
         geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -149,7 +172,7 @@ Provide a helpful, conversational response. Be specific about:
 Keep responses concise but informative (2-3 paragraphs max).`;
 
         geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -194,7 +217,7 @@ Based on this job description, create a list of specific requirements needed to 
 IMPORTANT: Return ONLY valid JSON, no markdown formatting. Return a JSON object with an "analysis" field (string) and a "requirements" array. Each requirement should have "title", "description", and "priority" fields.`;
 
         geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -238,7 +261,7 @@ Create 3-5 specific, actionable CPD recommendations. For each, provide:
 Return ONLY valid JSON with a "recommendations" array.`;
 
         geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -292,16 +315,50 @@ Return ONLY valid JSON with a "recommendations" array.`;
     const geminiData = await geminiResponse.json();
     const result = geminiData.candidates?.[0]?.content?.parts?.[0];
 
+    // Estimate tokens used (rough calculation: ~4 chars per token)
+    const inputTokens = JSON.stringify(data).length / 4;
+    const outputTokens = result?.text ? result.text.length / 4 : 0;
+    const totalTokens = Math.ceil(inputTokens + outputTokens);
+
+    // Track API usage in database (fire and forget - don't block response)
+    supabaseClient
+      .from('api_usage')
+      .insert({
+        user_id: user.id,
+        type: type,
+        tokens_used: totalTokens,
+        created_at: new Date().toISOString()
+      })
+      .then(() => console.log(`Tracked API usage: ${type} for user ${user.id}`))
+      .catch((err) => console.error('Error tracking API usage:', err));
+
     // Handle JSON responses (for transcribe, analyze_jd, recommendations)
     if (result?.text) {
       try {
         const parsed = JSON.parse(result.text);
-        return new Response(JSON.stringify(parsed), {
+        // Add usage info to response
+        const responseWithUsage = {
+          ...parsed,
+          _usage: {
+            callsToday: callsToday + 1,
+            limit: dailyLimit,
+            remaining: dailyLimit - (callsToday + 1)
+          }
+        };
+        return new Response(JSON.stringify(responseWithUsage), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } catch (parseError) {
         // If not JSON, return as text (for chat responses)
-        return new Response(JSON.stringify({ result: result.text }), {
+        const responseWithUsage = {
+          result: result.text,
+          _usage: {
+            callsToday: callsToday + 1,
+            limit: dailyLimit,
+            remaining: dailyLimit - (callsToday + 1)
+          }
+        };
+        return new Response(JSON.stringify(responseWithUsage), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

@@ -11,32 +11,71 @@ async function callEdgeFunction(type: 'transcribe' | 'chat' | 'analyze_jd' | 're
       throw new Error('Not authenticated. Please log in.');
     }
 
-    // Get Supabase URL from environment
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl) {
-      throw new Error('Supabase URL not configured');
-    }
-
-    // Call the Edge Function
-    const response = await fetch(`${supabaseUrl}/functions/v1/gemini-proxy`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-      },
-      body: JSON.stringify({ type, data }),
+    // Use Supabase client's functions.invoke() method (recommended way)
+    const { data: result, error } = await supabase.functions.invoke('gemini-proxy', {
+      body: { type, data },
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(errorData.error || `Edge Function error: ${response.status}`);
+    if (error) {
+      console.error('Edge Function error:', error);
+      
+      // Handle rate limit errors specifically
+      if (error.status === 429 || error.message?.includes('Rate limit')) {
+        const rateLimitError: any = new Error(error.message || 'Rate limit exceeded');
+        rateLimitError.isRateLimit = true;
+        rateLimitError.limit = error.limit;
+        rateLimitError.used = error.used;
+        rateLimitError.resetTime = error.resetTime;
+        throw rateLimitError;
+      }
+      
+      throw new Error(error.message || `Edge Function error: ${error.status || 'Unknown'}`);
     }
 
-    return await response.json();
+    if (!result) {
+      throw new Error('No response from Edge Function');
+    }
+
+    // Extract usage info if present (remove from result)
+    const usage = result._usage;
+    if (usage) {
+      delete result._usage;
+      // Store usage info for UI display
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('ai_usage', JSON.stringify(usage));
+      }
+    }
+
+    return result;
   } catch (error: any) {
     console.error(`Edge Function call failed (${type}):`, error);
     throw error;
+  }
+}
+
+// Get current API usage stats
+export async function getApiUsage(): Promise<{ callsToday: number; limit: number; remaining: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_user_api_usage_today', {
+      p_user_id: (await supabase.auth.getUser()).data.user?.id || ''
+    });
+
+    if (error) {
+      console.error('Error getting API usage:', error);
+      return null;
+    }
+
+    const limit = 10; // Daily limit
+    const callsToday = data || 0;
+    
+    return {
+      callsToday,
+      limit,
+      remaining: Math.max(0, limit - callsToday)
+    };
+  } catch (error) {
+    console.error('Error getting API usage:', error);
+    return null;
   }
 }
 
